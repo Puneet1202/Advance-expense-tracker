@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import api from '../../api/axios';
+import CurrencyWidget from '../CurrencyWidget';
 
 const Sidebar = ({ trackerData, fetchTrackerData, selectedAccountId, setSelectedAccountId }) => {
   const { is_saving_mode, expense_limit, accounts } = trackerData;
@@ -186,6 +187,9 @@ const Sidebar = ({ trackerData, fetchTrackerData, selectedAccountId, setSelected
           </div>
         </div>
       )}
+      {/* Live Currency Widget */}
+      <CurrencyWidget />
+
     </div>
   );
 };

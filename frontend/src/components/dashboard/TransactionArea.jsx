@@ -1,12 +1,71 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../../api/axios';
+
+// ─── Currency Conversion Utility ────────────────────────────────────────────
+const CACHE_KEY = 'currency_cache'; // shared with CurrencyWidget
+
+const CURRENCIES = [
+  { code: 'INR', symbol: '₹', flag: '🇮🇳' },
+  { code: 'USD', symbol: '$', flag: '🇺🇸' },
+  { code: 'EUR', symbol: '€', flag: '🇪🇺' },
+  { code: 'GBP', symbol: '£', flag: '🇬🇧' },
+  { code: 'AED', symbol: 'د.إ', flag: '🇦🇪' },
+  { code: 'SAR', symbol: '﷼', flag: '🇸🇦' },
+  { code: 'JPY', symbol: '¥', flag: '🇯🇵' },
+  { code: 'CAD', symbol: 'C$', flag: '🇨🇦' },
+  { code: 'AUD', symbol: 'A$', flag: '🇦🇺' },
+  { code: 'SGD', symbol: 'S$', flag: '🇸🇬' },
+];
+
+/**
+ * Returns the INR equivalent of `amount` in `fromCurrency`.
+ * Uses the same localStorage cache as CurrencyWidget (12h).
+ * rates object from API is INR-based: { USD: 0.01193, EUR: 0.01076, ... }
+ * Meaning: 1 INR = X foreign currency
+ * So: 1 foreign = 1/rate INR
+ */
+const convertToINR = async (amount, fromCurrency) => {
+  if (fromCurrency === 'INR') return amount;
+
+  // Try cache first
+  const cached = localStorage.getItem(CACHE_KEY);
+  let rates = null;
+  if (cached) {
+    const { data, timestamp } = JSON.parse(cached);
+    const CACHE_DURATION = 12 * 60 * 60 * 1000;
+    if (Date.now() - timestamp < CACHE_DURATION) {
+      rates = data;
+    }
+  }
+
+  // Fetch if no valid cache
+  if (!rates) {
+    const API_KEY = import.meta.env.VITE_EXCHANGE_RATE_API_KEY;
+    const res = await fetch(`https://v6.exchangerate-api.com/v6/${API_KEY}/latest/INR`);
+    const json = await res.json();
+    if (json.result !== 'success') throw new Error('Currency API error');
+    rates = json.conversion_rates;
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ data: rates, timestamp: Date.now() }));
+  }
+
+  // rates[fromCurrency] = how many foreignCurrency per 1 INR
+  // So 1 foreignCurrency = 1 / rates[fromCurrency] INR
+  const inrPerForeign = 1 / rates[fromCurrency];
+  return parseFloat((amount * inrPerForeign).toFixed(2));
+};
+// ────────────────────────────────────────────────────────────────────────────
 
 const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, setSelectedAccountId, currentMonth }) => {
   const { total_income, total_expenses, expense_limit, is_saving_mode, transactions, accounts } = trackerData;
-  const [txnForm, setTxnForm] = useState({ type: 'expense', amount: '', description: '', account_id: '' });
+  
+  const [txnForm, setTxnForm] = useState({ 
+    type: 'expense', amount: '', description: '', account_id: '', currency: 'INR' 
+  });
+  const [inrPreview, setInrPreview] = useState(null);
+  const [converting, setConverting] = useState(false);
 
   // History Filters
-  const [historyTypeFilter, setHistoryTypeFilter] = useState('all'); // all, income, expense
+  const [historyTypeFilter, setHistoryTypeFilter] = useState('all');
   const [historySearch, setHistorySearch] = useState('');
 
   const remaining = total_income - total_expenses;
@@ -24,16 +83,51 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
     }
   }
 
+  // Real-time INR preview whenever amount or currency changes
+  useEffect(() => {
+    const amount = parseFloat(txnForm.amount);
+    if (!amount || txnForm.currency === 'INR') {
+      setInrPreview(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setConverting(true);
+      try {
+        const inr = await convertToINR(amount, txnForm.currency);
+        setInrPreview(inr);
+      } catch {
+        setInrPreview(null);
+      } finally {
+        setConverting(false);
+      }
+    }, 400); // debounce 400ms
+    return () => clearTimeout(timer);
+  }, [txnForm.amount, txnForm.currency]);
+
   const handleAddTxn = async (e) => {
     e.preventDefault();
     try {
+      let finalAmount = parseFloat(txnForm.amount);
+
+      // Convert to INR before sending to backend
+      if (txnForm.currency !== 'INR') {
+        finalAmount = await convertToINR(finalAmount, txnForm.currency);
+      }
+
+      const currencyNote = txnForm.currency !== 'INR' 
+        ? ` (${txnForm.currency} ${txnForm.amount})` 
+        : '';
+      const description = txnForm.description || (txnForm.type === 'income' ? 'Income' : 'Expense');
+
       await api.post('/tracker/transaction', {
         type: txnForm.type,
-        amount: Number(txnForm.amount),
-        description: txnForm.description,
+        amount: finalAmount,
+        description: description + currencyNote,
         account_id: txnForm.account_id ? Number(txnForm.account_id) : null
       });
-      setTxnForm({ type: 'expense', amount: '', description: '', account_id: '' });
+
+      setTxnForm({ type: 'expense', amount: '', description: '', account_id: '', currency: 'INR' });
+      setInrPreview(null);
       fetchTrackerData();
     } catch (err) {
       alert(err.response?.data?.message || "Failed to add transaction");
@@ -54,6 +148,8 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
     return true;
   });
 
+  const selectedCurrencyInfo = CURRENCIES.find(c => c.code === txnForm.currency);
+
   return (
     <div className="md:col-span-2 space-y-6">
       
@@ -73,7 +169,7 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
         </div>
       </div>
 
-      {/* Progress Bar (If saving mode on) */}
+      {/* Progress Bar */}
       {is_saving_mode && expense_limit > 0 && (
         <div className="bg-white p-6 rounded-xl shadow">
           <div className="flex justify-between mb-2">
@@ -90,9 +186,10 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         {/* Add Transaction Form */}
-        <div className="bg-white p-6 rounded-xl shadow h-[400px] flex flex-col">
+        <div className="bg-white p-6 rounded-xl shadow flex flex-col">
           <h2 className="text-lg font-semibold mb-4">Add Transaction</h2>
-          <form onSubmit={handleAddTxn} className="flex-1 space-y-4">
+          <form onSubmit={handleAddTxn} className="flex-1 space-y-3">
+            {/* Type Radio */}
             <div className="flex gap-4">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="radio" name="type" value="expense" checked={txnForm.type === 'expense'} onChange={e => setTxnForm({...txnForm, type: e.target.value})} className="accent-red-500" />
@@ -103,36 +200,91 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
                 <span className="text-green-600 font-medium">Income</span>
               </label>
             </div>
-            <div>
-              <input type="text" value={txnForm.description} onChange={e => setTxnForm({...txnForm, description: e.target.value})} className="w-full border px-3 py-2 rounded-md" placeholder="Description (Optional, e.g. Salary, Rent)" />
-            </div>
-            <div>
-              <input type="number" value={txnForm.amount} onChange={e => setTxnForm({...txnForm, amount: e.target.value})} className="w-full border px-3 py-2 rounded-md" placeholder="Amount (₹)" min="1" required />
-            </div>
-            <div>
-              <select value={txnForm.account_id} onChange={e => setTxnForm({...txnForm, account_id: e.target.value})} className="w-full border px-3 py-2 rounded-md" required>
-                <option value="" disabled>-- Select an Account --</option>
-                {accounts.map(acc => (
-                  <option key={acc.id} value={acc.id}>{acc.name}</option>
+
+            {/* Description */}
+            <input 
+              type="text" 
+              value={txnForm.description} 
+              onChange={e => setTxnForm({...txnForm, description: e.target.value})} 
+              className="w-full border px-3 py-2 rounded-md text-sm" 
+              placeholder="Description (Optional, e.g. Salary, Rent)" 
+            />
+
+            {/* Amount + Currency Row */}
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <input 
+                  type="number" 
+                  value={txnForm.amount} 
+                  onChange={e => setTxnForm({...txnForm, amount: e.target.value})} 
+                  className="w-full border px-3 py-2 rounded-md text-sm" 
+                  placeholder={`Amount (${selectedCurrencyInfo?.symbol || '₹'})`}
+                  min="0.01" 
+                  step="0.01"
+                  required 
+                />
+              </div>
+              <select 
+                value={txnForm.currency}
+                onChange={e => setTxnForm({...txnForm, currency: e.target.value})}
+                className="border px-2 py-2 rounded-md text-sm bg-white text-gray-700 cursor-pointer"
+              >
+                {CURRENCIES.map(c => (
+                  <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
                 ))}
               </select>
             </div>
-            <button type="submit" className={`w-full py-2 text-white font-semibold rounded-md transition-colors mt-auto ${txnForm.type === 'income' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
-              Add {txnForm.type === 'income' ? 'Income' : 'Expense'}
+
+            {/* Live INR Preview */}
+            {txnForm.currency !== 'INR' && txnForm.amount && (
+              <div className={`text-xs px-3 py-2 rounded-md flex items-center gap-2 ${
+                converting ? 'bg-gray-50 text-gray-400' : 
+                inrPreview ? 'bg-blue-50 text-blue-700 border border-blue-100' : 'bg-red-50 text-red-500'
+              }`}>
+                {converting ? (
+                  <>⏳ Converting...</>
+                ) : inrPreview ? (
+                  <>
+                    💱 Equivalent to <strong>₹{inrPreview.toLocaleString('en-IN')}</strong> — this amount will be saved in database
+                  </>
+                ) : (
+                  <>⚠️ Could not fetch rate. Check API key.</>
+                )}
+              </div>
+            )}
+
+            {/* Account Select */}
+            <select 
+              value={txnForm.account_id} 
+              onChange={e => setTxnForm({...txnForm, account_id: e.target.value})} 
+              className="w-full border px-3 py-2 rounded-md text-sm" 
+              required
+            >
+              <option value="" disabled>-- Select an Account --</option>
+              {accounts.map(acc => (
+                <option key={acc.id} value={acc.id}>{acc.name} (₹{acc.balance})</option>
+              ))}
+            </select>
+
+            <button 
+              type="submit" 
+              disabled={converting}
+              className={`w-full py-2.5 text-white font-semibold rounded-md transition-colors disabled:opacity-60 ${txnForm.type === 'income' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+            >
+              {converting ? '⏳ Converting...' : `Add ${txnForm.type === 'income' ? 'Income' : 'Expense'}`}
+              {txnForm.currency !== 'INR' && inrPreview ? ` (₹${inrPreview.toLocaleString('en-IN')})` : ''}
             </button>
           </form>
         </div>
 
         {/* History */}
-        <div className="bg-white p-6 rounded-xl shadow h-[400px] flex flex-col">
+        <div className="bg-white p-6 rounded-xl shadow h-[430px] flex flex-col">
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-lg font-semibold">
               {selectedAccountId ? `${accounts.find(a => a.id === selectedAccountId)?.name || ''} History` : 'Transaction History'}
             </h2>
             {selectedAccountId && (
-              <button onClick={() => setSelectedAccountId(null)} className="text-sm text-blue-500 hover:underline">
-                Show All
-              </button>
+              <button onClick={() => setSelectedAccountId(null)} className="text-sm text-blue-500 hover:underline">Show All</button>
             )}
           </div>
 
@@ -155,34 +307,29 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
               className="border px-2 py-1 rounded text-xs flex-1 min-w-[120px]"
             />
             {(historyTypeFilter !== 'all' || historySearch) && (
-              <button 
-                onClick={() => { setHistoryTypeFilter('all'); setHistorySearch(''); }}
-                className="text-xs text-red-500 hover:underline"
-              >
-                Clear
-              </button>
+              <button onClick={() => { setHistoryTypeFilter('all'); setHistorySearch(''); }} className="text-xs text-red-500 hover:underline">Clear</button>
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto pr-2">
+          <div className="flex-1 overflow-y-auto pr-1">
             {filteredTransactions.length === 0 ? (
               <p className="text-gray-500 text-sm">No transactions found.</p>
             ) : (
-              <ul className="space-y-3">
+              <ul className="space-y-2">
                 {filteredTransactions.map(txn => (
                   <li key={txn.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border hover:shadow-sm transition-shadow">
                     <div>
-                      <p className="font-semibold text-gray-800">{txn.description}</p>
-                      <div className="flex items-center gap-2 mt-1">
+                      <p className="font-semibold text-gray-800 text-sm">{txn.description}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{txn.account_name || 'General'}</span>
                         <span className="text-xs text-gray-400">{new Date(txn.created_at).toLocaleDateString()}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <span className={`font-bold ${txn.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
+                    <div className="flex items-center gap-3">
+                      <span className={`font-bold text-sm ${txn.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
                         {txn.type === 'income' ? '+' : '-'}₹{txn.amount}
                       </span>
-                      <button onClick={() => deleteTxn(txn.id)} className="text-gray-400 hover:text-red-500 transition-colors">🗑️</button>
+                      <button onClick={() => deleteTxn(txn.id)} className="text-gray-300 hover:text-red-500 transition-colors text-sm">🗑️</button>
                     </div>
                   </li>
                 ))}
