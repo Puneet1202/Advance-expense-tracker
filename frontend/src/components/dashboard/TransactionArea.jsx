@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
+import { fmt } from '../../utils/formatCurrency';
 
 // ─── Currency Conversion Utility ────────────────────────────────────────────
 const CACHE_KEY = 'currency_cache'; // shared with CurrencyWidget
@@ -157,15 +158,15 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white p-6 rounded-xl shadow border-l-4 border-green-500">
           <p className="text-sm text-gray-500">Total Income</p>
-          <h3 className="text-2xl font-bold text-gray-800">₹{total_income}</h3>
+          <h3 className="text-2xl font-bold text-gray-800">{fmt(total_income)}</h3>
         </div>
         <div className="bg-white p-6 rounded-xl shadow border-l-4 border-red-500">
           <p className="text-sm text-gray-500">Total Expenses</p>
-          <h3 className="text-2xl font-bold text-gray-800">₹{total_expenses}</h3>
+          <h3 className="text-2xl font-bold text-gray-800">{fmt(total_expenses)}</h3>
         </div>
         <div className="bg-white p-6 rounded-xl shadow border-l-4 border-blue-500">
           <p className="text-sm text-gray-500">Remaining Balance</p>
-          <h3 className={`text-2xl font-bold ${remaining < 0 ? 'text-red-500' : 'text-blue-600'}`}>₹{remaining}</h3>
+          <h3 className={`text-2xl font-bold ${remaining < 0 ? 'text-red-500' : 'text-blue-600'}`}>{fmt(remaining)}</h3>
         </div>
       </div>
 
@@ -173,7 +174,7 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
       {is_saving_mode && expense_limit > 0 && (
         <div className="bg-white p-6 rounded-xl shadow">
           <div className="flex justify-between mb-2">
-            <span className="text-sm font-semibold text-gray-600">Budget Limit: ₹{expense_limit}</span>
+            <span className="text-sm font-semibold text-gray-600">Budget Limit: {fmt(expense_limit)}</span>
             <span className="text-sm font-semibold text-gray-600">{progressPercent.toFixed(1)}% Used</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-3">
@@ -245,7 +246,7 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
                   <>⏳ Converting...</>
                 ) : inrPreview ? (
                   <>
-                    💱 Equivalent to <strong>₹{inrPreview.toLocaleString('en-IN')}</strong> — this amount will be saved in database
+                    💱 Equivalent to <strong>{fmt(inrPreview)}</strong> — this amount will be saved in database
                   </>
                 ) : (
                   <>⚠️ Could not fetch rate. Check API key.</>
@@ -262,7 +263,7 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
             >
               <option value="" disabled>-- Select an Account --</option>
               {accounts.map(acc => (
-                <option key={acc.id} value={acc.id}>{acc.name} (₹{acc.balance})</option>
+                <option key={acc.id} value={acc.id}>{acc.name} ({fmt(acc.balance)})</option>
               ))}
             </select>
 
@@ -272,7 +273,7 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
               className={`w-full py-2.5 text-white font-semibold rounded-md transition-colors disabled:opacity-60 ${txnForm.type === 'income' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
             >
               {converting ? '⏳ Converting...' : `Add ${txnForm.type === 'income' ? 'Income' : 'Expense'}`}
-              {txnForm.currency !== 'INR' && inrPreview ? ` (₹${inrPreview.toLocaleString('en-IN')})` : ''}
+              {txnForm.currency !== 'INR' && inrPreview ? ` (${fmt(inrPreview)})` : ''}
             </button>
           </form>
         </div>
@@ -327,7 +328,7 @@ const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, set
                     </div>
                     <div className="flex items-center gap-3">
                       <span className={`font-bold text-sm ${txn.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                        {txn.type === 'income' ? '+' : '-'}₹{txn.amount}
+                        {txn.type === 'income' ? '+' : '-'}{fmt(txn.amount)}
                       </span>
                       <button onClick={() => deleteTxn(txn.id)} className="text-gray-300 hover:text-red-500 transition-colors text-sm">🗑️</button>
                     </div>

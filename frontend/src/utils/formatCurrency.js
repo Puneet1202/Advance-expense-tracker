@@ -5,7 +5,7 @@
  */
 export const fmt = (value) => {
   const num = Math.round((parseFloat(value) || 0) * 100) / 100;
-  return num.toLocaleString('en-IN', {
+  return '₹' + num.toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });

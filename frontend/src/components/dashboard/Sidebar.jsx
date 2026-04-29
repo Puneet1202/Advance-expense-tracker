@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import api from '../../api/axios';
 import CurrencyWidget from '../CurrencyWidget';
+import { fmt } from '../../utils/formatCurrency';
 
 const Sidebar = ({ trackerData, fetchTrackerData, selectedAccountId, setSelectedAccountId }) => {
   const { is_saving_mode, expense_limit, accounts } = trackerData;
@@ -118,7 +119,7 @@ const Sidebar = ({ trackerData, fetchTrackerData, selectedAccountId, setSelected
               <div>
                 <span className="font-medium text-gray-800">{acc.name}</span>
                 <span className={`ml-2 text-xs font-bold ${acc.balance < 0 ? 'text-red-500' : 'text-green-600'}`}>
-                  ₹{acc.balance || 0}
+                  {fmt(acc.balance || 0)}
                 </span>
               </div>
               <button 
@@ -138,7 +139,7 @@ const Sidebar = ({ trackerData, fetchTrackerData, selectedAccountId, setSelected
           <div className="bg-white rounded-xl p-6 max-w-sm w-full shadow-2xl">
             <h3 className="text-lg font-bold mb-2">Transfer Balance</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Account <strong>{transferModal.name}</strong> has a balance of <strong className="text-blue-600">₹{transferModal.balance}</strong>.<br/> 
+              Account <strong>{transferModal.name}</strong> has a balance of <strong className="text-blue-600">{fmt(transferModal.balance)}</strong>.<br/> 
               {transferModal.otherAccounts.length > 0 ? "Please select where to transfer this money before deleting:" : ""}
             </p>
             
@@ -149,7 +150,7 @@ const Sidebar = ({ trackerData, fetchTrackerData, selectedAccountId, setSelected
                 onChange={(e) => setTransferModal({...transferModal, selectedTarget: Number(e.target.value)})}
               >
                 {transferModal.otherAccounts.map(a => (
-                  <option key={a.id} value={a.id}>{a.name} (Balance: ₹{a.balance})</option>
+                  <option key={a.id} value={a.id}>{a.name} (Balance: {fmt(a.balance)})</option>
                 ))}
               </select>
             ) : (
