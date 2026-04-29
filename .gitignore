@@ -1,0 +1,22 @@
+# Dependency folders
+node_modules/
+dist/
+
+# Local env files (Secret keys yahan hoti hain)
+.env
+.dev.vars
+
+# Cloudflare / Wrangler specific
+.wrangler/
+.cloudflare/
+
+# Database files (Local D1 data)
+*.db
+*.sqlite
+
+# Testing / Dummy Data
+seed.sql
+
+# OS related
+.DS_Store
+Thumbs.db
