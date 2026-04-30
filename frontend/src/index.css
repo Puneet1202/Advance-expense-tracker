@@ -272,6 +272,38 @@ body {
   flex-wrap: wrap;
 }
 
+/* Hamburger button (hidden on desktop) */
+.hamburger-btn {
+  display: none;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text-1);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* Mobile Dropdown Menu */
+.header-mobile-menu {
+  position: absolute;
+  top: 100%;
+  right: 1.25rem;
+  margin-top: 10px;
+  background: var(--surface-1);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--shadow-xl);
+  z-index: 100;
+  min-width: 200px;
+  animation: fadeUp 0.2s ease forwards;
+}
+
 /* ─── MOBILE: below 900px ────────────────────────── */
 @media (max-width: 900px) {
   .dashboard-grid {
@@ -283,6 +315,14 @@ body {
   .content-grid {
     grid-template-columns: 1fr;
   }
+  
+  /* Hide desktop header controls and show hamburger */
+  .header-controls {
+    display: none;
+  }
+  .hamburger-btn {
+    display: flex;
+  }
 }
 
 /* ─── SMALL MOBILE: below 600px ──────────────────── */
@@ -290,11 +330,6 @@ body {
   .header-bar {
     padding: 0.75rem 1rem;
     border-radius: var(--radius-md);
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .header-controls {
-    justify-content: space-between;
   }
   .stats-grid {
     grid-template-columns: 1fr 1fr;
@@ -312,9 +347,5 @@ body {
 @media (max-width: 400px) {
   .stats-grid {
     grid-template-columns: 1fr;
-  }
-  .header-controls {
-    flex-wrap: wrap;
-    gap: 6px;
   }
 }

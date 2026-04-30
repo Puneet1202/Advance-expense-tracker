@@ -35,9 +35,54 @@ export default function Header({ user, trackerData, selectedAccountId, setIsLogg
     } catch { alert('Failed to fetch report data'); }
   };
 
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const renderControls = (isMobile = false) => (
+    <>
+      {/* Month picker */}
+      <div style={{ display:'flex', alignItems:'center', gap:'6px', flexDirection: isMobile ? 'column' : 'row', width: isMobile ? '100%' : 'auto' }}>
+        <input type="month" value={currentMonth}
+          onChange={e=>{setCurrentMonth(e.target.value); if(isMobile) setMobileMenuOpen(false);}}
+          min={minMonth} max={maxMonth}
+          className="field"
+          style={{ width: isMobile ? '100%' : 'auto', padding:'8px 12px', fontSize:'0.82rem' }}
+        />
+        {currentMonth && (
+          <button className="btn btn-ghost" onClick={()=>{setCurrentMonth(''); if(isMobile) setMobileMenuOpen(false);}}
+            style={{ padding:'8px 12px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto' }}>All</button>
+        )}
+      </div>
+
+      {/* Report */}
+      <button className="btn btn-ghost" onClick={()=>{setReportOpen(true); if(isMobile) setMobileMenuOpen(false);}}
+        style={{ padding:'8px 14px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto' }}>
+        ↓ Report
+      </button>
+
+      {/* Reset */}
+      <button className="btn btn-ghost"
+        onClick={async()=>{
+          if(window.confirm('⚠️ Reset all data?')) {
+            try { await api.delete('/tracker/reset'); window.location.reload(); }
+            catch(e){ alert('Failed: '+e.message); }
+          }
+          if(isMobile) setMobileMenuOpen(false);
+        }}
+        style={{ padding:'8px 12px', fontSize:'0.82rem', color:'var(--red)', width: isMobile ? '100%' : 'auto' }}>
+        Reset
+      </button>
+
+      {/* Logout */}
+      <button className="btn btn-ghost" onClick={()=>setIsLoggedIn(false)}
+        style={{ padding:'8px 14px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto' }}>
+        Sign out
+      </button>
+    </>
+  );
+
   return (
     <>
-      <header className="header-bar">
+      <header className="header-bar" style={{ position: 'relative' }}>
         {/* Left */}
         <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
           <div style={{
@@ -57,30 +102,9 @@ export default function Header({ user, trackerData, selectedAccountId, setIsLogg
           </div>
         </div>
 
-        {/* Right controls */}
-        <div className="header-controls">
-
-          {/* Month picker */}
-          <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
-            <input type="month" value={currentMonth}
-              onChange={e=>setCurrentMonth(e.target.value)}
-              min={minMonth} max={maxMonth}
-              className="field"
-              style={{ width:'auto', padding:'8px 12px', fontSize:'0.82rem' }}
-            />
-            {currentMonth && (
-              <button className="btn btn-ghost" onClick={()=>setCurrentMonth('')}
-                style={{ padding:'8px 12px', fontSize:'0.82rem' }}>All</button>
-            )}
-          </div>
-
-          {/* Report */}
-          <button className="btn btn-ghost" onClick={()=>setReportOpen(true)}
-            style={{ padding:'8px 14px', fontSize:'0.82rem' }}>
-            ↓ Report
-          </button>
-
-          {/* Dark mode toggle */}
+        {/* Right controls wrapper */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Dark mode toggle (Always visible) */}
           <button
             onClick={()=>setDarkMode(d=>!d)}
             className="btn btn-ghost"
@@ -90,23 +114,22 @@ export default function Header({ user, trackerData, selectedAccountId, setIsLogg
             {darkMode ? '☀️' : '🌙'}
           </button>
 
-          {/* Reset */}
-          <button className="btn btn-ghost"
-            onClick={async()=>{
-              if(window.confirm('⚠️ Reset all data?')) {
-                try { await api.delete('/tracker/reset'); window.location.reload(); }
-                catch(e){ alert('Failed: '+e.message); }
-              }
-            }}
-            style={{ padding:'8px 12px', fontSize:'0.82rem', color:'var(--red)' }}>
-            Reset
+          {/* Desktop Controls (Hidden on mobile) */}
+          <div className="header-controls">
+            {renderControls(false)}
+          </div>
+
+          {/* Hamburger Button (Visible on mobile) */}
+          <button className="hamburger-btn" onClick={()=>setMobileMenuOpen(!mobileMenuOpen)}>
+            ☰
           </button>
 
-          {/* Logout */}
-          <button className="btn btn-ghost" onClick={()=>setIsLoggedIn(false)}
-            style={{ padding:'8px 14px', fontSize:'0.82rem' }}>
-            Sign out
-          </button>
+          {/* Mobile Dropdown Menu */}
+          {mobileMenuOpen && (
+            <div className="header-mobile-menu">
+              {renderControls(true)}
+            </div>
+          )}
         </div>
       </header>
 
