@@ -1,8 +1,15 @@
 import axios from 'axios';
+import { mockApi } from './mockApi';
 
-const api = axios.create({
-  baseURL: '/api', // Proxied by Vite to the backend
-  withCredentials: true // Important to send cookies with requests
-});
+// Mock mode ON karo → VITE_MOCK_MODE=true (.env.local mein)
+// Mock mode OFF karo → backend (wrangler) bhi chalana padega
+const IS_MOCK = import.meta.env.VITE_MOCK_MODE === 'true';
+
+const api = IS_MOCK
+  ? mockApi
+  : axios.create({
+      baseURL: '/api',
+      withCredentials: true
+    });
 
 export default api;

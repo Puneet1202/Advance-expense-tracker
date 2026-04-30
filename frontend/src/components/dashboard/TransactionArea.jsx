@@ -1,199 +1,283 @@
 import { useState } from 'react';
 import api from '../../api/axios';
 
-const TransactionArea = ({ trackerData, fetchTrackerData, selectedAccountId, setSelectedAccountId, currentMonth }) => {
+const fmt    = n => Number(n||0).toLocaleString('en-IN');
+const fmtDate = s => new Date(s).toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+
+export default function TransactionArea({ trackerData, fetchTrackerData,
+  selectedAccountId, setSelectedAccountId, currentMonth }) {
+
   const { total_income, total_expenses, expense_limit, is_saving_mode, transactions, accounts } = trackerData;
-  const [txnForm, setTxnForm] = useState({ type: 'expense', amount: '', description: '', account_id: '' });
+  const [form, setForm] = useState({ type:'expense', amount:'', description:'', account_id:'' });
+  const [busy, setBusy] = useState(false);
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [search, setSearch] = useState('');
 
-  // History Filters
-  const [historyTypeFilter, setHistoryTypeFilter] = useState('all'); // all, income, expense
-  const [historySearch, setHistorySearch] = useState('');
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+  const net = total_income - total_expenses;
+  const pct = expense_limit>0 ? Math.min((total_expenses/expense_limit)*100,100) : 0;
 
-  const remaining = total_income - total_expenses;
-  const progressPercent = expense_limit > 0 ? Math.min((total_expenses / expense_limit) * 100, 100) : 0;
-  
-  let progressColor = "bg-green-500";
-  let alertMsg = "";
-  if (is_saving_mode && expense_limit > 0) {
-    if (total_expenses > expense_limit) {
-      progressColor = "bg-red-500";
-      alertMsg = "⚠️ Limit Exceeded! You have spent more than your budget.";
-    } else if (total_expenses >= expense_limit * 0.8) {
-      progressColor = "bg-yellow-500";
-      alertMsg = "⚠️ Warning: Approaching your budget limit!";
-    }
-  }
+  const barColor = pct>=100 ? 'var(--red)' : pct>=80 ? 'var(--orange)' : 'var(--green)';
 
-  const handleAddTxn = async (e) => {
-    e.preventDefault();
+  const addTxn = async (e) => {
+    e.preventDefault(); setBusy(true);
     try {
-      await api.post('/tracker/transaction', {
-        type: txnForm.type,
-        amount: Number(txnForm.amount),
-        description: txnForm.description,
-        account_id: txnForm.account_id ? Number(txnForm.account_id) : null
+      await api.post('/tracker/transaction',{
+        type:form.type, amount:Number(form.amount),
+        description:form.description,
+        account_id:form.account_id?Number(form.account_id):null
       });
-      setTxnForm({ type: 'expense', amount: '', description: '', account_id: '' });
+      setForm({type:form.type,amount:'',description:'',account_id:''});
       fetchTrackerData();
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to add transaction");
-    }
+    } catch(err){ alert(err.response?.data?.message||'Failed'); }
+    finally { setBusy(false); }
   };
 
-  const deleteTxn = async (id) => {
-    if(!window.confirm("Hide this from history?")) return;
+  const delTxn = async (id) => {
+    if(!window.confirm('Remove this transaction?')) return;
     await api.delete(`/tracker/transaction/${id}`);
     fetchTrackerData();
   };
 
-  // Apply all history filters
-  const filteredTransactions = transactions.filter(t => {
-    if (selectedAccountId && t.account_id !== selectedAccountId) return false;
-    if (historyTypeFilter !== 'all' && t.type !== historyTypeFilter) return false;
-    if (historySearch && !t.description.toLowerCase().includes(historySearch.toLowerCase())) return false;
+  const filtered = transactions.filter(t=>{
+    if(selectedAccountId && t.account_id!==selectedAccountId) return false;
+    if(typeFilter!=='all' && t.type!==typeFilter) return false;
+    if(search && !t.description?.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
+  const statCards = [
+    { label:'Income',    value:total_income,   color:'var(--green)',  bg:'var(--green-bg)',  border:'var(--green-border)',  icon:'↑' },
+    { label:'Expenses',  value:total_expenses,  color:'var(--red)',    bg:'var(--red-bg)',    border:'var(--red-border)',    icon:'↓' },
+    { label:'Net',       value:Math.abs(net),   color: net<0?'var(--red)':'var(--accent)',
+      bg:'var(--accent-glow)', border:'rgba(91,91,214,0.22)',
+      icon: net<0?'↓':'↑', prefix: net<0?'-':'+' },
+  ];
+
   return (
-    <div className="md:col-span-2 space-y-6">
-      
-      {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-white p-6 rounded-xl shadow border-l-4 border-green-500">
-          <p className="text-sm text-gray-500">Total Income</p>
-          <h3 className="text-2xl font-bold text-gray-800">₹{total_income}</h3>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow border-l-4 border-red-500">
-          <p className="text-sm text-gray-500">Total Expenses</p>
-          <h3 className="text-2xl font-bold text-gray-800">₹{total_expenses}</h3>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow border-l-4 border-blue-500">
-          <p className="text-sm text-gray-500">Remaining Balance</p>
-          <h3 className={`text-2xl font-bold ${remaining < 0 ? 'text-red-500' : 'text-blue-600'}`}>₹{remaining}</h3>
-        </div>
+    <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
+
+      {/* Stat cards */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'12px' }}>
+        {statCards.map((c,i)=>(
+          <div key={c.label} className={`card anim-up d${i+1}`} style={{
+            padding:'1.25rem', border:`1.5px solid ${c.border}`,
+            background: c.bg, boxShadow:'none'
+          }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px' }}>
+              <span style={{ fontSize:'0.72rem', fontWeight:600, color:'var(--text-3)',
+                letterSpacing:'0.04em', textTransform:'uppercase' }}>{c.label}</span>
+              <span style={{
+                width:'26px', height:'26px', borderRadius:'8px',
+                background:'var(--surface)', display:'flex', alignItems:'center',
+                justifyContent:'center', fontSize:'0.85rem', fontWeight:700,
+                color: c.color, boxShadow:'var(--shadow-sm)'
+              }}>{c.icon}</span>
+            </div>
+            <p className="num" style={{ fontSize:'1.5rem', fontWeight:800,
+              color:'var(--text-1)', letterSpacing:'-0.04em' }}>
+              {c.prefix||''}₹{fmt(c.value)}
+            </p>
+          </div>
+        ))}
       </div>
 
-      {/* Progress Bar (If saving mode on) */}
-      {is_saving_mode && expense_limit > 0 && (
-        <div className="bg-white p-6 rounded-xl shadow">
-          <div className="flex justify-between mb-2">
-            <span className="text-sm font-semibold text-gray-600">Budget Limit: ₹{expense_limit}</span>
-            <span className="text-sm font-semibold text-gray-600">{progressPercent.toFixed(1)}% Used</span>
+      {/* Budget bar */}
+      {is_saving_mode && expense_limit>0 && (
+        <div className="card anim-up d4" style={{ padding:'1.25rem' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
+            <div>
+              <p style={{ fontWeight:600, fontSize:'0.84rem', color:'var(--text-1)', letterSpacing:'-0.02em' }}>
+                Budget limit — <span className="num" style={{color:barColor}}>₹{fmt(expense_limit)}</span>
+              </p>
+              {pct>=80 && <p style={{ fontSize:'0.75rem', color:barColor, marginTop:'3px', fontWeight:500 }}>
+                {pct>=100 ? '⚠ Over budget!' : '⚠ Approaching limit'}
+              </p>}
+            </div>
+            <span style={{ fontSize:'0.82rem', fontWeight:700, color:barColor }}>{pct.toFixed(0)}%</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-3">
-            <div className={`${progressColor} h-3 rounded-full transition-all duration-500`} style={{ width: `${progressPercent}%` }}></div>
+          <div className="progress-track">
+            <div className="progress-fill" style={{ width:`${pct}%`, background:barColor }}/>
           </div>
-          {alertMsg && <p className={`mt-2 text-sm font-semibold ${progressColor === 'bg-red-500' ? 'text-red-600' : 'text-yellow-600'}`}>{alertMsg}</p>}
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
-        {/* Add Transaction Form */}
-        <div className="bg-white p-6 rounded-xl shadow h-[400px] flex flex-col">
-          <h2 className="text-lg font-semibold mb-4">Add Transaction</h2>
-          <form onSubmit={handleAddTxn} className="flex-1 space-y-4">
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="type" value="expense" checked={txnForm.type === 'expense'} onChange={e => setTxnForm({...txnForm, type: e.target.value})} className="accent-red-500" />
-                <span className="text-red-600 font-medium">Expense</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="type" value="income" checked={txnForm.type === 'income'} onChange={e => setTxnForm({...txnForm, type: e.target.value})} className="accent-green-500" />
-                <span className="text-green-600 font-medium">Income</span>
-              </label>
+      {/* Form + History */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1.6fr', gap:'12px', alignItems:'start' }}>
+
+        {/* Add Transaction */}
+        <div className="card anim-up d3" style={{ padding:'1.5rem' }}>
+          <p style={{ fontWeight:700, fontSize:'0.875rem', letterSpacing:'-0.03em',
+            marginBottom:'1.25rem', color:'var(--text-1)' }}>Add Transaction</p>
+
+          <form onSubmit={addTxn} style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
+
+            {/* Type toggle */}
+            <div style={{
+              display:'grid', gridTemplateColumns:'1fr 1fr', gap:'5px',
+              background:'var(--bg-3)', borderRadius:'12px', padding:'4px',
+              border:'1px solid var(--border)'
+            }}>
+              {['expense','income'].map(t=>(
+                <button key={t} type="button" onClick={()=>set('type',t)}
+                  style={{
+                    padding:'9px', borderRadius:'9px', border:'none',
+                    fontFamily:'inherit', fontWeight:700, fontSize:'0.82rem',
+                    cursor:'pointer', transition:'all 0.2s ease',
+                    background: form.type===t
+                      ? (t==='expense'?'var(--red)':'var(--green)')
+                      : 'transparent',
+                    color: form.type===t ? '#fff' : 'var(--text-3)',
+                    boxShadow: form.type===t ? 'var(--shadow-sm)' : 'none'
+                  }}
+                >{t==='expense' ? '↓ Expense' : '↑ Income'}</button>
+              ))}
             </div>
-            <div>
-              <input type="text" value={txnForm.description} onChange={e => setTxnForm({...txnForm, description: e.target.value})} className="w-full border px-3 py-2 rounded-md" placeholder="Description (Optional, e.g. Salary, Rent)" />
+
+            <input type="text" className="field" placeholder="Description (optional)"
+              value={form.description} onChange={e=>set('description',e.target.value)}
+              style={{ fontSize:'0.85rem' }}/>
+
+            <div style={{ position:'relative' }}>
+              <span style={{
+                position:'absolute', left:'14px', top:'50%', transform:'translateY(-50%)',
+                color:'var(--text-3)', fontWeight:600, fontSize:'0.9rem'
+              }}>₹</span>
+              <input type="number" className="field" placeholder="0"
+                value={form.amount} onChange={e=>set('amount',e.target.value)}
+                min="1" required
+                style={{ paddingLeft:'28px', fontSize:'1rem', fontWeight:700, letterSpacing:'-0.02em' }}/>
             </div>
-            <div>
-              <input type="number" value={txnForm.amount} onChange={e => setTxnForm({...txnForm, amount: e.target.value})} className="w-full border px-3 py-2 rounded-md" placeholder="Amount (₹)" min="1" required />
-            </div>
-            <div>
-              <select value={txnForm.account_id} onChange={e => setTxnForm({...txnForm, account_id: e.target.value})} className="w-full border px-3 py-2 rounded-md" required>
-                <option value="" disabled>-- Select an Account --</option>
-                {accounts.map(acc => (
-                  <option key={acc.id} value={acc.id}>{acc.name}</option>
-                ))}
-              </select>
-            </div>
-            <button type="submit" className={`w-full py-2 text-white font-semibold rounded-md transition-colors mt-auto ${txnForm.type === 'income' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
-              Add {txnForm.type === 'income' ? 'Income' : 'Expense'}
+
+            <select className="field" value={form.account_id}
+              onChange={e=>set('account_id',e.target.value)} required
+              style={{ fontSize:'0.85rem' }}>
+              <option value="" disabled>Select account</option>
+              {accounts.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+
+            <button type="submit" disabled={busy}
+              className={`btn ${form.type==='income'?'btn-green':'btn-red'}`}
+              style={{ width:'100%', padding:'12px', borderRadius:'12px', fontSize:'0.875rem', opacity:busy?0.6:1 }}>
+              {busy ? 'Adding…' : `Add ${form.type==='income'?'income':'expense'}${form.amount?' — ₹'+Number(form.amount).toLocaleString('en-IN'):''}`}
             </button>
           </form>
         </div>
 
         {/* History */}
-        <div className="bg-white p-6 rounded-xl shadow h-[400px] flex flex-col">
-          <div className="flex justify-between items-center mb-3">
-            <h2 className="text-lg font-semibold">
-              {selectedAccountId ? `${accounts.find(a => a.id === selectedAccountId)?.name || ''} History` : 'Transaction History'}
-            </h2>
+        <div className="card anim-up d4" style={{ padding:'1.5rem', minHeight:'480px', display:'flex', flexDirection:'column' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+              <p style={{ fontWeight:700, fontSize:'0.875rem', letterSpacing:'-0.03em', color:'var(--text-1)' }}>
+                {selectedAccountId
+                  ? `${accounts.find(a=>a.id===selectedAccountId)?.name||''}`
+                  : 'Transactions'}
+              </p>
+              <span className="badge badge-accent">{filtered.length}</span>
+            </div>
             {selectedAccountId && (
-              <button onClick={() => setSelectedAccountId(null)} className="text-sm text-blue-500 hover:underline">
-                Show All
-              </button>
+              <button className="btn btn-ghost" onClick={()=>setSelectedAccountId(null)}
+                style={{ padding:'5px 10px', fontSize:'0.76rem' }}>All</button>
             )}
           </div>
 
-          {/* History Filters */}
-          <div className="flex gap-2 mb-3 flex-wrap">
-            <select 
-              value={historyTypeFilter} 
-              onChange={e => setHistoryTypeFilter(e.target.value)}
-              className="border px-2 py-1 rounded text-xs text-gray-600"
-            >
-              <option value="all">All Types</option>
-              <option value="income">Income Only</option>
-              <option value="expense">Expense Only</option>
-            </select>
-            <input 
-              type="text" 
-              placeholder="🔍 Search description..." 
-              value={historySearch}
-              onChange={e => setHistorySearch(e.target.value)}
-              className="border px-2 py-1 rounded text-xs flex-1 min-w-[120px]"
-            />
-            {(historyTypeFilter !== 'all' || historySearch) && (
-              <button 
-                onClick={() => { setHistoryTypeFilter('all'); setHistorySearch(''); }}
-                className="text-xs text-red-500 hover:underline"
+          {/* Filters */}
+          <div style={{ display:'flex', gap:'8px', marginBottom:'12px', flexWrap:'wrap' }}>
+            <div style={{ display:'flex', background:'var(--bg-3)', borderRadius:'10px',
+              padding:'3px', gap:'3px', border:'1px solid var(--border)' }}>
+              {['all','income','expense'].map(f=>(
+                <button key={f} type="button" onClick={()=>setTypeFilter(f)}
+                  style={{
+                    padding:'5px 12px', borderRadius:'8px', border:'none',
+                    fontFamily:'inherit', fontWeight:600, fontSize:'0.76rem',
+                    cursor:'pointer', transition:'all 0.18s',
+                    background: typeFilter===f ? 'var(--surface)' : 'transparent',
+                    color: typeFilter===f ? 'var(--accent)' : 'var(--text-3)',
+                    boxShadow: typeFilter===f ? 'var(--shadow-sm)' : 'none'
+                  }}
+                >{f==='all'?'All':f==='income'?'Income':'Expense'}</button>
+              ))}
+            </div>
+
+            <div style={{ flex:1, minWidth:'120px' }}>
+              <input type="text" className="field" placeholder="Search…"
+                value={search} onChange={e=>setSearch(e.target.value)}
+                style={{ padding:'7px 12px', fontSize:'0.82rem' }}/>
+            </div>
+
+            {(typeFilter!=='all'||search) && (
+              <button className="btn btn-ghost"
+                onClick={()=>{setTypeFilter('all');setSearch('');}}
+                style={{ padding:'7px 12px', fontSize:'0.78rem', color:'var(--red)' }}>✕</button>
+            )}
+          </div>
+
+          {/* List */}
+          <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:'6px' }}>
+            {filtered.length===0 ? (
+              <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center',
+                justifyContent:'center', color:'var(--text-4)', gap:'8px' }}>
+                <span style={{ fontSize:'2rem' }}>🔍</span>
+                <p style={{ fontSize:'0.84rem', fontWeight:500 }}>No transactions found</p>
+              </div>
+            ) : filtered.map((t,i)=>(
+              <div key={t.id} className="anim-up"
+                style={{
+                  display:'flex', alignItems:'center', justifyContent:'space-between',
+                  padding:'11px 13px', borderRadius:'12px',
+                  background:'var(--surface-2)', border:'1px solid var(--border)',
+                  transition:'background 0.18s, border-color 0.18s',
+                  animationDelay:`${i*0.02}s`
+                }}
+                onMouseEnter={e=>{e.currentTarget.style.background='var(--bg-4)';e.currentTarget.style.borderColor='var(--border-2)';}}
+                onMouseLeave={e=>{e.currentTarget.style.background='var(--surface-2)';e.currentTarget.style.borderColor='var(--border)';}}
               >
-                Clear
-              </button>
-            )}
-          </div>
+                <div style={{ display:'flex', alignItems:'center', gap:'11px', minWidth:0 }}>
+                  <div style={{
+                    width:'34px', height:'34px', borderRadius:'10px', flexShrink:0,
+                    display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.9rem',
+                    background: t.type==='income' ? 'var(--green-bg)' : 'var(--red-bg)',
+                    border: `1px solid ${t.type==='income'?'var(--green-border)':'var(--red-border)'}`,
+                  }}>
+                    {t.type==='income'?'↑':'↓'}
+                  </div>
+                  <div style={{ minWidth:0 }}>
+                    <p style={{ fontWeight:600, fontSize:'0.84rem', color:'var(--text-1)',
+                      whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                      {t.description||'No description'}
+                    </p>
+                    <p style={{ fontSize:'0.72rem', color:'var(--text-4)', marginTop:'2px' }}>
+                      <span style={{
+                        background:'var(--bg-4)', padding:'1px 7px', borderRadius:'6px',
+                        marginRight:'5px', color:'var(--text-3)', fontWeight:500
+                      }}>{t.account_name||'General'}</span>
+                      {fmtDate(t.created_at)}
+                    </p>
+                  </div>
+                </div>
 
-          <div className="flex-1 overflow-y-auto pr-2">
-            {filteredTransactions.length === 0 ? (
-              <p className="text-gray-500 text-sm">No transactions found.</p>
-            ) : (
-              <ul className="space-y-3">
-                {filteredTransactions.map(txn => (
-                  <li key={txn.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border hover:shadow-sm transition-shadow">
-                    <div>
-                      <p className="font-semibold text-gray-800">{txn.description}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{txn.account_name || 'General'}</span>
-                        <span className="text-xs text-gray-400">{new Date(txn.created_at).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className={`font-bold ${txn.type === 'income' ? 'text-green-600' : 'text-red-600'}`}>
-                        {txn.type === 'income' ? '+' : '-'}₹{txn.amount}
-                      </span>
-                      <button onClick={() => deleteTxn(txn.id)} className="text-gray-400 hover:text-red-500 transition-colors">🗑️</button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+                <div style={{ display:'flex', alignItems:'center', gap:'10px', flexShrink:0 }}>
+                  <span className="num" style={{
+                    fontWeight:800, fontSize:'0.88rem', letterSpacing:'-0.03em',
+                    color: t.type==='income'?'var(--green)':'var(--red)'
+                  }}>
+                    {t.type==='income'?'+':'-'}₹{fmt(t.amount)}
+                  </span>
+                  <button type="button" onClick={()=>delTxn(t.id)}
+                    style={{
+                      background:'none', border:'none', cursor:'pointer',
+                      color:'var(--text-4)', fontSize:'0.82rem', padding:'4px',
+                      borderRadius:'6px', transition:'color 0.2s', lineHeight:1
+                    }}
+                    onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
+                    onMouseLeave={e=>e.currentTarget.style.color='var(--text-4)'}
+                  >✕</button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-
       </div>
     </div>
   );
-};
-
-export default TransactionArea;
+}
