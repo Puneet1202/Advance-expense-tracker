@@ -133,10 +133,10 @@
         try {
             const user = c.get('user');
             const db = c.env.expense_tracker_db;
-            const id = c.req.param('id');
+            const id = Number(c.req.param('id'));
 
-            await db.prepare("UPDATE TRANSACTIONS SET is_hidden = 1 WHERE id = ? AND user_id = ?").bind(id, user.id).run();
-            return c.json({ message: "Transaction hidden from history", status: 200 }, 200);
+            await db.prepare("DELETE FROM TRANSACTIONS WHERE id = ? AND user_id = ?").bind(id, user.id).run();
+            return c.json({ message: "Transaction deleted from history", status: 200 }, 200);
         } catch (error) {
             return c.json({ message: "internal server error", status: 500 }, 500);
         }
@@ -164,7 +164,7 @@
         try {
             const user = c.get('user');
             const db = c.env.expense_tracker_db;
-            const id = c.req.param('id');
+            const id = Number(c.req.param('id'));
             
             let body = {};
             try { body = await c.req.json(); } catch(e) {}
@@ -183,7 +183,7 @@
                 if (t.type === 'expense') balance -= t.amount;
             });
 
-            if (balance > 0) {
+            if (balance !== 0) {
                 if (!transfer_account_id && !auto_create_account_name) {
                     return c.json({ 
                         message: "BALANCE_REMAINING",
@@ -196,21 +196,26 @@
                     const newAcc = await db.prepare("INSERT INTO ACCOUNTS (user_id, name) VALUES (?, ?) RETURNING id").bind(user.id, auto_create_account_name).first();
                     transfer_account_id = newAcc.id;
                 }
-                
+                const transferAmount = Math.abs(balance);
+                const outType = balance > 0 ? 'expense' : 'income';
+                const inType = balance > 0 ? 'income' : 'expense';
+
                 // Do the transfer: 
                 await db.prepare("INSERT INTO TRANSACTIONS (user_id, type, amount, description, account_id) VALUES (?, ?, ?, ?, ?)")
-                    .bind(user.id, 'expense', balance, `Transfer out (Account Closing)`, id)
+                    .bind(user.id, outType, transferAmount, `Transfer out (Account Closing)`, id)
                     .run();
                     
                 await db.prepare("INSERT INTO TRANSACTIONS (user_id, type, amount, description, account_id) VALUES (?, ?, ?, ?, ?)")
-                    .bind(user.id, 'income', balance, `Transfer in from ${closingAccName} (Account Closing)`, transfer_account_id)
+                    .bind(user.id, inType, transferAmount, `Transfer in from ${closingAccName} (Account Closing)`, transfer_account_id)
                     .run();
             }
 
+            await db.prepare("UPDATE TRANSACTIONS SET account_id = NULL WHERE account_id = ? AND user_id = ?").bind(id, user.id).run();
             await db.prepare("DELETE FROM ACCOUNTS WHERE id = ? AND user_id = ?").bind(id, user.id).run();
             return c.json({ message: "Account deleted", status: 200 }, 200);
         } catch (error) {
-            return c.json({ message: "internal server error", status: 500 }, 500);
+            console.error("Delete Account Error:", error);
+            return c.json({ message: "internal server error", details: error.message, status: 500 }, 500);
         }
     };
 

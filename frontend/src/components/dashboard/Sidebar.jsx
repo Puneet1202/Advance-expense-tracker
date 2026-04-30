@@ -54,9 +54,18 @@ export default function Sidebar({ trackerData, fetchTrackerData, selectedAccount
     } catch(err) {
       if(err.response?.data?.message==='BALANCE_REMAINING') {
         const others = accounts.filter(a=>a.id!==id);
-        setTransferModal({id,name,balance:err.response.data.balance,others,
-          target:others.length>0?others[0].id:'new',newName:''});
-      } else alert(err.response?.data?.message||'Failed');
+        const isCash = name.toLowerCase() === 'cash';
+        const defaultNewName = isCash ? '' : 'cash';
+        
+        setTransferModal({
+          id, name, balance: err.response.data.balance, others,
+          target: others.length > 0 ? others[0].id : 'new',
+          newName: defaultNewName
+        });
+      } else {
+        console.error("Delete Account Error:", err);
+        alert(`Failed to delete account. Server says: ${err.response?.data?.details || err.response?.data?.message || err.message}`);
+      }
     }
   };
 
@@ -231,6 +240,10 @@ export default function Sidebar({ trackerData, fetchTrackerData, selectedAccount
                 const to = transferModal.target==='new'?null:transferModal.target;
                 const an = transferModal.target==='new'?transferModal.newName.trim():null;
                 if(transferModal.target==='new'&&!an){alert('Enter account name');return;}
+                if(transferModal.target==='new' && an.toLowerCase() === transferModal.name.toLowerCase()){
+                  alert(`You cannot use the same name "${an}" for the new account.`);
+                  return;
+                }
                 delAcc(transferModal.id,transferModal.name,true,to,an);
               }}>Delete</button>
             </div>

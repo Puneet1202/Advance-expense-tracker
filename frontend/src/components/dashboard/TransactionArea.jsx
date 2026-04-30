@@ -360,7 +360,7 @@ export default function TransactionArea({ trackerData, fetchTrackerData,
                 <span style={{ fontSize:'2rem' }}>🔍</span>
                 <p style={{ fontSize:'0.84rem', fontWeight:500 }}>No transactions found</p>
               </div>
-            ) : (showAll ? filtered : filtered.slice(0, VISIBLE_COUNT)).map((t,i)=>(
+            ) : filtered.slice(0, VISIBLE_COUNT).map((t,i)=>(
               <div key={t.id} className="anim-up"
                 style={{
                   display:'flex', alignItems:'center', justifyContent:'space-between',
@@ -416,9 +416,9 @@ export default function TransactionArea({ trackerData, fetchTrackerData,
               </div>
             ))}
 
-            {/* Show All / Show Less toggle */}
+            {/* Show All toggle */}
             {filtered.length > VISIBLE_COUNT && (
-              <button type="button" onClick={()=>setShowAll(s=>!s)}
+              <button type="button" onClick={()=>setShowAll(true)}
                 style={{
                   background:'var(--bg-3)', border:'1.5px solid var(--border)',
                   borderRadius:'12px', padding:'10px', cursor:'pointer',
@@ -429,15 +429,86 @@ export default function TransactionArea({ trackerData, fetchTrackerData,
                 onMouseEnter={e=>{e.currentTarget.style.background='var(--accent-glow)';e.currentTarget.style.borderColor='var(--accent)';}}
                 onMouseLeave={e=>{e.currentTarget.style.background='var(--bg-3)';e.currentTarget.style.borderColor='var(--border)';}}
               >
-                {showAll
-                  ? '↑ Show Less'
-                  : `↓ Show All ${filtered.length} transactions`
-                }
+                View all {filtered.length} transactions →
               </button>
             )}
           </div>
         </div>
       </div>
+
+      {/* Full History Modal */}
+      {showAll && (
+        <div className="modal-bg" style={{ zIndex: 1000 }}>
+          <div className="card anim-card" style={{ 
+            width: '100%', maxWidth: '600px', maxHeight: '85vh', 
+            display: 'flex', flexDirection: 'column', padding: '1.5rem',
+            boxShadow: 'var(--shadow-xl)'
+          }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.5rem' }}>
+              <h3 style={{ fontWeight:700, fontSize:'1.2rem', letterSpacing:'-0.03em' }}>All Transactions</h3>
+              <button className="btn btn-ghost" onClick={()=>setShowAll(false)} style={{ padding:'6px 12px' }}>Close ✕</button>
+            </div>
+            
+            <div style={{ flex:1, overflowY:'auto', display:'flex', flexDirection:'column', gap:'8px', paddingRight:'5px' }}>
+              {filtered.map((t,i)=>(
+                <div key={t.id} className="anim-up"
+                  style={{
+                    display:'flex', alignItems:'center', justifyContent:'space-between',
+                    padding:'12px 16px', borderRadius:'12px',
+                    background:'var(--surface-2)', border:'1px solid var(--border)',
+                    transition:'background 0.18s, border-color 0.18s',
+                    animationDelay:`${i > 10 ? 0 : i*0.02}s`, gap:'8px'
+                  }}
+                  onMouseEnter={e=>{e.currentTarget.style.background='var(--bg-4)';e.currentTarget.style.borderColor='var(--border-2)';}}
+                  onMouseLeave={e=>{e.currentTarget.style.background='var(--surface-2)';e.currentTarget.style.borderColor='var(--border)';}}
+                >
+                  <div style={{ display:'flex', alignItems:'center', gap:'12px', minWidth:0, flex:1 }}>
+                    <div style={{
+                      width:'38px', height:'38px', borderRadius:'10px', flexShrink:0,
+                      display:'flex', alignItems:'center', justifyContent:'center', fontSize:'1rem',
+                      background: t.type==='income' ? 'var(--green-bg)' : 'var(--red-bg)',
+                      border: `1px solid ${t.type==='income'?'var(--green-border)':'var(--red-border)'}`,
+                    }}>
+                      {t.type==='income'?'↑':'↓'}
+                    </div>
+                    <div style={{ minWidth:0, flex:1 }}>
+                      <p style={{ fontWeight:600, fontSize:'0.9rem', color:'var(--text-1)',
+                        whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                        {t.description||'No description'}
+                      </p>
+                      <p style={{ fontSize:'0.75rem', color:'var(--text-4)', marginTop:'3px' }}>
+                        <span style={{
+                          background:'var(--bg-4)', padding:'2px 8px', borderRadius:'6px',
+                          marginRight:'6px', color:'var(--text-3)', fontWeight:500
+                        }}>{t.account_name||'General'}</span>
+                        {fmtDate(t.created_at)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display:'flex', alignItems:'center', gap:'12px', flexShrink:0 }}>
+                    <span className="num" style={{
+                      fontWeight:800, fontSize:'0.95rem', letterSpacing:'-0.03em',
+                      color: t.type==='income'?'var(--green)':'var(--red)'
+                    }}>
+                      {t.type==='income'?'+':'-'}{fmt(t.amount)}
+                    </span>
+                    <button type="button" onClick={()=>{ delTxn(t.id); if(filtered.length <= 1) setShowAll(false); }}
+                      style={{
+                        background:'none', border:'none', cursor:'pointer',
+                        color:'var(--text-4)', fontSize:'0.9rem', padding:'4px',
+                        borderRadius:'6px', transition:'color 0.2s', lineHeight:1
+                      }}
+                      onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
+                      onMouseLeave={e=>e.currentTarget.style.color='var(--text-4)'}
+                    >✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
