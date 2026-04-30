@@ -68,7 +68,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight:'100vh', background:'var(--bg)', transition:'background 0.3s' }}>
-      <div style={{ maxWidth:'1240px', margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
+      <div style={{ maxWidth:'1280px', margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
 
         {/* Header */}
         <div style={{ marginBottom:'1rem' }}>
@@ -81,8 +81,8 @@ export default function App() {
           />
         </div>
 
-        {/* Dashboard grid */}
-        <div style={{ display:'grid', gridTemplateColumns:'280px 1fr', gap:'12px', alignItems:'start' }}>
+        {/* Dashboard grid — responsive via CSS class */}
+        <div className="dashboard-grid">
           <Sidebar
             trackerData={trackerData} fetchTrackerData={fetchTrackerData}
             selectedAccountId={selectedAccountId} setSelectedAccountId={setSelectedAccountId}

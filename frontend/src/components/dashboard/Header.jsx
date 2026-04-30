@@ -37,13 +37,7 @@ export default function Header({ user, trackerData, selectedAccountId, setIsLogg
 
   return (
     <>
-      <header style={{
-        background:'var(--surface)', border:'1px solid var(--border)',
-        borderRadius:'var(--radius-lg)', padding:'1rem 1.5rem',
-        display:'flex', alignItems:'center', justifyContent:'space-between',
-        flexWrap:'wrap', gap:'0.75rem', boxShadow:'var(--shadow-sm)',
-        transition:'background 0.3s, border-color 0.3s'
-      }}>
+      <header className="header-bar">
         {/* Left */}
         <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
           <div style={{
@@ -64,7 +58,7 @@ export default function Header({ user, trackerData, selectedAccountId, setIsLogg
         </div>
 
         {/* Right controls */}
-        <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
+        <div className="header-controls">
 
           {/* Month picker */}
           <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>

@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../../api/axios';
+import CurrencyWidget from '../CurrencyWidget';
+import { fmt } from '../../utils/formatCurrency';
 
 const ICONS = { cash:'💵', upi:'📱', gpay:'📱', phonepe:'📱', hdfc:'🏦', sbi:'🏦',
-  bank:'🏦', axis:'🏦', card:'💳', credit:'💳', debit:'💳', wallet:'👝' };
+  bank:'🏦', axis:'🏦', card:'💳', credit:'💳', debit:'💳', wallet:'👝', salary:'💼' };
 const getIcon = (name='') => {
   const n = name.toLowerCase();
   return Object.entries(ICONS).find(([k])=>n.includes(k))?.[1] ?? '💰';
 };
-const fmt = n => Number(n||0).toLocaleString('en-IN');
 
 export default function Sidebar({ trackerData, fetchTrackerData, selectedAccountId, setSelectedAccountId }) {
   const { is_saving_mode, expense_limit, accounts } = trackerData;
@@ -15,12 +16,22 @@ export default function Sidebar({ trackerData, fetchTrackerData, selectedAccount
   const [limitVal, setLimitVal]   = useState(expense_limit||'');
   const [addingAcc, setAddingAcc] = useState(false);
   const [transferModal, setTransferModal] = useState(null);
+  const [showRates, setShowRates] = useState(() => localStorage.getItem('show_rates') === '1');
+
+  // Sync limitVal when expense_limit loads from API
+  useEffect(() => {
+    if (expense_limit) setLimitVal(expense_limit);
+  }, [expense_limit]);
 
   const totalBal = accounts.reduce((s,a)=>s+(a.balance||0),0);
 
   const toggleSaving = async () => {
-    await api.post('/tracker/settings', { expense_limit:Number(limitVal), is_saving_mode:!is_saving_mode });
-    fetchTrackerData();
+    try {
+      await api.post('/tracker/settings', { expense_limit:Number(limitVal)||0, is_saving_mode:!is_saving_mode });
+      fetchTrackerData();
+    } catch(err) {
+      alert('Failed to toggle saving mode: ' + (err.response?.data?.message || err.message));
+    }
   };
   const saveLimit = async (e) => {
     e.preventDefault();
@@ -68,9 +79,10 @@ export default function Sidebar({ trackerData, fetchTrackerData, selectedAccount
             Total Balance
           </p>
           <p className="num" style={{
-            fontSize:'2rem', fontWeight:800, color:'#fff', letterSpacing:'-0.04em', lineHeight:1
+            fontSize:'2rem', fontWeight:800, color:'#fff', letterSpacing:'-0.04em', lineHeight:1,
+            wordBreak:'break-all'
           }}>
-            ₹{fmt(Math.abs(totalBal))}
+            {fmt(Math.abs(totalBal))}
             {totalBal < 0 && <span style={{ fontSize:'1rem', marginLeft:'6px', opacity:0.7 }}>deficit</span>}
           </p>
           <p style={{ color:'rgba(255,255,255,0.5)', fontSize:'0.75rem', marginTop:'8px' }}>
@@ -123,8 +135,9 @@ export default function Sidebar({ trackerData, fetchTrackerData, selectedAccount
             ) : accounts.map(acc => {
               const selected = selectedAccountId===acc.id;
               return (
-                <button key={acc.id} type="button"
+                <div key={acc.id} role="button" tabIndex={0}
                   onClick={()=>setSelectedAccountId(selected?null:acc.id)}
+                  onKeyDown={e=>{if(e.key==='Enter')setSelectedAccountId(selected?null:acc.id);}}
                   style={{
                     display:'flex', alignItems:'center', justifyContent:'space-between',
                     padding:'10px 12px', borderRadius:'12px', cursor:'pointer',
@@ -134,14 +147,15 @@ export default function Sidebar({ trackerData, fetchTrackerData, selectedAccount
                     fontFamily:'inherit'
                   }}
                 >
-                  <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'10px', minWidth:0 }}>
                     <span style={{ fontSize:'1.1rem' }}>{getIcon(acc.name)}</span>
-                    <div>
-                      <p style={{ fontWeight:600, fontSize:'0.82rem', color:'var(--text-1)' }}>{acc.name}</p>
+                    <div style={{ minWidth:0 }}>
+                      <p style={{ fontWeight:600, fontSize:'0.82rem', color:'var(--text-1)',
+                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{acc.name}</p>
                       <p className="num" style={{
                         fontSize:'0.78rem', fontWeight:700,
                         color: acc.balance<0 ? 'var(--red)' : 'var(--green)'
-                      }}>₹{fmt(Math.abs(acc.balance||0))}{acc.balance<0?' ↓':''}</p>
+                      }}>{fmt(Math.abs(acc.balance||0))}{acc.balance<0?' ↓':''}</p>
                     </div>
                   </div>
                   <button
@@ -155,7 +169,7 @@ export default function Sidebar({ trackerData, fetchTrackerData, selectedAccount
                     onMouseEnter={e=>e.currentTarget.style.color='var(--red)'}
                     onMouseLeave={e=>e.currentTarget.style.color='var(--text-4)'}
                   >✕</button>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -167,6 +181,27 @@ export default function Sidebar({ trackerData, fetchTrackerData, selectedAccount
             </button>
           )}
         </div>
+
+        {/* Currency Widget with Toggle */}
+        <div className="card anim-up d3" style={{ padding:'1.25rem' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+              <span style={{ fontSize:'1.1rem' }}>💱</span>
+              <p style={{ fontWeight:700, fontSize:'0.875rem', color:'var(--text-1)', letterSpacing:'-0.02em' }}>Live Rates</p>
+            </div>
+            <button className={`toggle ${showRates?'on':''}`} onClick={()=>{
+              const next = !showRates;
+              setShowRates(next);
+              localStorage.setItem('show_rates', next ? '1' : '0');
+            }}/>
+          </div>
+          {!showRates && (
+            <p style={{ fontSize:'0.75rem', color:'var(--text-4)', marginTop:'6px' }}>
+              Toggle on to view live exchange rates
+            </p>
+          )}
+        </div>
+        {showRates && <CurrencyWidget />}
       </div>
 
       {/* Transfer Modal */}
@@ -175,14 +210,14 @@ export default function Sidebar({ trackerData, fetchTrackerData, selectedAccount
           <div className="card anim-card" style={{ maxWidth:'380px', width:'100%', padding:'1.75rem', boxShadow:'var(--shadow-xl)' }}>
             <h3 style={{ fontWeight:700, fontSize:'1rem', letterSpacing:'-0.03em', marginBottom:'0.75rem' }}>Transfer balance</h3>
             <p style={{ color:'var(--text-3)', fontSize:'0.85rem', lineHeight:1.6, marginBottom:'1.25rem' }}>
-              <b style={{color:'var(--text-1)'}}>{transferModal.name}</b> has ₹{fmt(transferModal.balance)}.
+              <b style={{color:'var(--text-1)'}}>{transferModal.name}</b> has {fmt(transferModal.balance)}.
               {transferModal.others.length>0 ? ' Select where to transfer it:' : ''}
             </p>
             {transferModal.others.length>0 ? (
               <select className="field" style={{ marginBottom:'1.25rem' }}
                 value={transferModal.target}
                 onChange={e=>setTransferModal({...transferModal,target:Number(e.target.value)})}>
-                {transferModal.others.map(a=><option key={a.id} value={a.id}>{a.name} (₹{fmt(a.balance)})</option>)}
+                {transferModal.others.map(a=><option key={a.id} value={a.id}>{a.name} ({fmt(a.balance)})</option>)}
               </select>
             ) : (
               <input type="text" className="field" placeholder="New account name"
