@@ -31,7 +31,7 @@ const CHIPS = [
 ];
 
 // ── TAB 1: Chat ───────────────────────────────────────────────────────────────
-function ChatTab({ messages, input, setInput, isLoading, handleSend, actionStatus }) {
+function ChatTab({ messages, input, setInput, isLoading, handleSend, actionStatus, clearHistory }) {
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -51,6 +51,23 @@ function ChatTab({ messages, input, setInput, isLoading, handleSend, actionStatu
           fontWeight: 600, textAlign: 'center', marginBottom: '8px', flexShrink: 0,
         }}>
           {actionStatus.text}
+        </div>
+      )}
+
+      {/* Clear button — only when messages exist */}
+      {messages.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '4px', flexShrink: 0 }}>
+          <button onClick={clearHistory}
+            style={{
+              background: 'none', border: '1px solid var(--border)', borderRadius: '8px',
+              padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit',
+              fontSize: '0.68rem', color: 'var(--text-4)', transition: 'color 0.15s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-4)'}
+          >
+            🗑 Clear
+          </button>
         </div>
       )}
 
@@ -357,6 +374,7 @@ export default function AiChat({ trackerData, fetchTrackerData, onClose }) {
             isLoading={hook.isLoading}
             handleSend={hook.handleSend}
             actionStatus={hook.actionStatus}
+            clearHistory={hook.clearHistory}
           />
         )}
         {hook.activeTab === 'insights' && (
