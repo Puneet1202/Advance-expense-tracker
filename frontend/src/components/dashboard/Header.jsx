@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { downloadPDF, downloadExcel } from '../../utils/exportUtils';
 import api from '../../api/axios';
+import ImportStatement from '../../features/ai-import/ImportStatement';
+import AiConfigPanel from '../../ai-config/AiConfigPanel';
 
 export default function Header({ user, trackerData, selectedAccountId, setIsLoggedIn,
-  currentMonth, setCurrentMonth, availableMonths, darkMode, setDarkMode }) {
+  currentMonth, setCurrentMonth, availableMonths, darkMode, setDarkMode, fetchTrackerData }) {
 
   const [reportOpen, setReportOpen] = useState(false);
+  const [aiConfigOpen, setAiConfigOpen] = useState(false);
   const [rangeType, setRangeType]   = useState('all');
   const [fromDate, setFromDate]     = useState('');
   const [toDate, setToDate]         = useState('');
@@ -53,6 +56,20 @@ export default function Header({ user, trackerData, selectedAccountId, setIsLogg
         )}
       </div>
 
+      {/* AI Import */}
+      <ImportStatement
+        accounts={trackerData.accounts || []}
+        onSuccess={() => { fetchTrackerData?.(); if(isMobile) setMobileMenuOpen(false); }}
+      />
+
+      {/* AI Config */}
+      <button className="btn btn-ghost" onClick={()=>{ setAiConfigOpen(true); if(isMobile) setMobileMenuOpen(false); }}
+        style={{ padding:'8px 12px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto' }}
+        title="AI Instructions configure karo"
+      >
+        🧠 AI Config
+      </button>
+
       {/* Report */}
       <button className="btn btn-ghost" onClick={()=>{setReportOpen(true); if(isMobile) setMobileMenuOpen(false);}}
         style={{ padding:'8px 14px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto' }}>
@@ -82,6 +99,7 @@ export default function Header({ user, trackerData, selectedAccountId, setIsLogg
 
   return (
     <>
+      {aiConfigOpen && <AiConfigPanel onClose={() => setAiConfigOpen(false)} />}
       <header className="header-bar" style={{ position: 'relative' }}>
         {/* Left */}
         <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>

@@ -9,26 +9,58 @@ export default function App() {
   const [isLoading, setIsLoading]   = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser]             = useState(null);
-  const [darkMode, setDarkMode]     = useState(false);
+  const [trackerData, setTrackerData] = useState({ transactions: [], accounts: [] });
+  // const [darkMode, setDarkMode]     = useState(()=>{
+  //   return localStorage.getItem('theme') === 'dark';
+  // });
+
+
+   // Shuru mein 'theme_guest' check karega, baad mein user load hone par badal jayega
+    const [darkMode, setDarkMode] = useState(() => {
+  const savedTheme = localStorage.getItem('theme_guest'); 
+  return savedTheme === 'dark';
+});
+
 
   const dateObj = new Date();
   const defaultMonth = `${dateObj.getFullYear()}-${String(dateObj.getMonth()+1).padStart(2,'0')}`;
   const [currentMonth, setCurrentMonth]   = useState(defaultMonth);
   const [selectedAccountId, setSelectedAccountId] = useState(null);
-  const [trackerData, setTrackerData] = useState({
-    total_income:0, total_expenses:0, expense_limit:0,
-    is_saving_mode:false, transactions:[], accounts:[], available_months:[]
-  });
+
+  const getThemeKey = () => {
+  return user ? `theme_${user.id}` : 'theme_guest';
+};
+
+
+
+ 
+// User load hone par uska purana preference fetch karne ke liye
+useEffect(() => {
+  if (user) {
+    const userTheme = localStorage.getItem(`theme_${user.id}`);
+    if (userTheme !== null) {
+      setDarkMode(userTheme === 'dark');
+    }
+  }
+}, [user]); // Jab bhi user login/change ho, uska theme load ho jaye
 
   // Apply dark mode to document
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
-  }, [darkMode]);
+useEffect(() => {
+  const themeKey = getThemeKey();
+  if (darkMode) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem(themeKey, 'dark');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'light');
+    localStorage.setItem(themeKey, 'light');
+  }
+}, [darkMode, user]);
 
   const fetchTrackerData = async () => {
     try {
       const res = await api.get(`/tracker?month=${currentMonth}`);
       setTrackerData(res.data);
+      console.log("BACKEND DATA:", res.data.user)
       if (res.data.user) setUser(res.data.user);
       setIsLoggedIn(true);
     } catch (err) {
@@ -64,7 +96,7 @@ export default function App() {
     </div>
   );
 
-  if (!isLoggedIn) return <AuthForm setIsLoggedIn={setIsLoggedIn} setUser={setUser}/>;
+  if (!isLoggedIn) return <AuthForm setIsLoggedIn={setIsLoggedIn} setUser={setUser}  onLoginSuccess={fetchTrackerData}/>;
 
   return (
     <div style={{ minHeight:'100vh', background:'var(--bg)', transition:'background 0.3s' }}>
@@ -78,6 +110,7 @@ export default function App() {
             currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
             availableMonths={trackerData.available_months||[]}
             darkMode={darkMode} setDarkMode={setDarkMode}
+            fetchTrackerData={fetchTrackerData}
           />
         </div>
 

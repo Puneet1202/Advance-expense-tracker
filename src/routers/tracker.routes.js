@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { getTrackerData, updateSettings, addTransaction, deleteTransaction, addAccount, deleteAccount, resetAllData } from "../controllers/tracker.controller";
+import { importStatementHandler } from "../features/ai-import/index.js";
 
 const router = new Hono();
 
@@ -17,5 +18,8 @@ router.delete('/reset', resetAllData);
 
 router.post('/account', addAccount);
 router.delete('/account/:id', deleteAccount);
+
+// AI Import Route — naya feature
+router.post('/import-statement', importStatementHandler);
 
 export default router;
