@@ -1,27 +1,44 @@
-import { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { downloadPDF, downloadExcel } from '../../utils/exportUtils';
 import api from '../../api/axios';
 import ImportStatement from '../../features/ai-import/ImportStatement';
-import AiConfigPanel from '../../ai-config/AiConfigPanel';
 import AnalyticsModal from './AnalyticsModal';
 
-export default function Header({ user, trackerData, selectedAccountId, setIsLoggedIn,
-  currentMonth, setCurrentMonth, availableMonths, darkMode, setDarkMode, fetchTrackerData }) {
+// ─── Responsive Hook ──────────────────────────────────────────────────────────
+function useWindowWidth() {
+  const [width, setWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    const fn = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, []);
+  return width;
+}
 
-  const [reportOpen, setReportOpen] = useState(false);
-  const [aiConfigOpen, setAiConfigOpen] = useState(false);
+export default function Header({
+  user, trackerData = { accounts: [] }, selectedAccountId, setIsLoggedIn,
+  currentMonth, setCurrentMonth, availableMonths = [], darkMode, setDarkMode, fetchTrackerData
+}) {
+  const [reportOpen, setReportOpen]     = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
-  const [rangeType, setRangeType]   = useState('all');
-  const [fromDate, setFromDate]     = useState('');
-  const [toDate, setToDate]         = useState('');
-  const [fromMonth, setFromMonth]   = useState('');
-  const [toMonth, setToMonth]       = useState('');
+  const [menuOpen, setMenuOpen]         = useState(false);
+  const menuRef = useRef(null);
 
-  const now = new Date();
-  const maxMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const sorted = [...(availableMonths||[])].sort();
+  const [rangeType, setRangeType] = useState('all');
+  const [fromDate, setFromDate]   = useState('');
+  const [toDate, setToDate]       = useState('');
+  const [fromMonth, setFromMonth] = useState('');
+  const [toMonth, setToMonth]     = useState('');
+
+  const width     = useWindowWidth();
+  const isMobile  = width < 480;
+  const isTablet  = width >= 480 && width < 768;
+
+  const now      = new Date();
+  const maxMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const sorted   = [...availableMonths].sort();
   const minMonth = sorted[0] || maxMonth;
-  const { accounts } = trackerData;
+  const accounts = trackerData.accounts || [];
 
   const greeting = () => {
     const h = now.getHours();
@@ -32,188 +49,250 @@ export default function Header({ user, trackerData, selectedAccountId, setIsLogg
 
   const download = async (fmt) => {
     try {
-      const r = await api.get('/tracker?month=');
-      const args = [user, r.data.transactions||[], accounts, selectedAccountId,
-        rangeType, fromDate, toDate, fromMonth, toMonth];
-      fmt==='pdf' ? downloadPDF(...args) : downloadExcel(...args);
+      const r    = await api.get('/tracker?month=');
+      const args = [
+        user, r.data?.transactions || [], accounts, selectedAccountId,
+        rangeType, fromDate, toDate, fromMonth, toMonth
+      ];
+      fmt === 'pdf' ? downloadPDF(...args) : downloadExcel(...args);
       setReportOpen(false);
     } catch { alert('Failed to fetch report data'); }
   };
 
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // Close menu on outside click
+  useEffect(() => {
+    const fn = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', fn);
+    return () => document.removeEventListener('mousedown', fn);
+  }, []);
 
-  const renderControls = (isMobile = false) => (
-    <>
-      {/* Month picker */}
-      <div style={{ display:'flex', alignItems:'center', gap:'6px', flexDirection: isMobile ? 'column' : 'row', width: isMobile ? '100%' : 'auto' }}>
-        <input type="month" value={currentMonth}
-          onChange={e=>{setCurrentMonth(e.target.value); if(isMobile) setMobileMenuOpen(false);}}
-          min={minMonth} max={maxMonth}
-          className="field"
-          style={{ width: isMobile ? '100%' : 'auto', padding:'8px 12px', fontSize:'0.82rem' }}
-        />
-        {currentMonth && (
-          <button className="btn btn-ghost" onClick={()=>{setCurrentMonth(''); if(isMobile) setMobileMenuOpen(false);}}
-            style={{ padding:'8px 12px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto' }}>All</button>
-        )}
-      </div>
+  // ── Shared colors ──────────────────────────────────────────────────────────
+  const bg      = darkMode ? '#1e293b' : '#ffffff';
+  const border  = darkMode ? '#334155' : '#e2e8f0';
+  const text1   = darkMode ? '#f8fafc'  : '#0f172a';
+  const text2   = darkMode ? '#94a3b8'  : '#64748b';
+  const menuBg  = darkMode ? '#0f172a'  : '#ffffff';
 
-      {/* AI Import */}
-      <ImportStatement
-        accounts={trackerData.accounts || []}
-        onSuccess={() => { fetchTrackerData?.(); if(isMobile) setMobileMenuOpen(false); }}
-      />
+  // ── Button styles ──────────────────────────────────────────────────────────
+  const iconBtn = {
+    padding: '8px', background: 'transparent', border: 'none',
+    cursor: 'pointer', fontSize: '1.15rem', borderRadius: '8px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    color: text1,
+  };
 
-      {/* Analytics */}
-      <button className="btn btn-ghost" onClick={()=>{ setAnalyticsOpen(true); if(isMobile) setMobileMenuOpen(false); }}
-        style={{ padding:'8px 12px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto' }}
-        title="Category analytics dekhein"
-      >
-        📊 Analytics
-      </button>
+  const menuBtn = {
+    padding: isMobile ? '7px 10px' : '8px 14px',
+    fontSize: isMobile ? '0.78rem' : '0.85rem',
+    display: 'flex', alignItems: 'center', gap: '5px',
+    background: darkMode ? '#334155' : '#f1f5f9',
+    color: text1, border: 'none', borderRadius: '8px',
+    cursor: 'pointer', fontWeight: 600,
+  };
 
-      {/* AI Config — Hidden (moved to AI Chatbot → Rules tab) */}
-      <button className="btn btn-ghost" onClick={()=>{ setAiConfigOpen(true); if(isMobile) setMobileMenuOpen(false); }}
-        style={{ padding:'8px 12px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto', display:'none' }}
-        title="AI Instructions configure karo"
-      >
-        🧠 AI Config
-      </button>
 
-      {/* Report */}
-      <button className="btn btn-ghost" onClick={()=>{setReportOpen(true); if(isMobile) setMobileMenuOpen(false);}}
-        style={{ padding:'8px 14px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto' }}>
-        ↓ Report
-      </button>
-
-      {/* Reset */}
-      <button className="btn btn-ghost"
-        onClick={async()=>{
-          if(window.confirm('⚠️ Reset all data?')) {
-            try { await api.delete('/tracker/reset'); window.location.reload(); }
-            catch(e){ alert('Failed: '+e.message); }
-          }
-          if(isMobile) setMobileMenuOpen(false);
-        }}
-        style={{ padding:'8px 12px', fontSize:'0.82rem', color:'var(--red)', width: isMobile ? '100%' : 'auto' }}>
-        Reset
-      </button>
-
-      {/* Logout */}
-      <button className="btn btn-ghost" onClick={()=>setIsLoggedIn(false)}
-        style={{ padding:'8px 14px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto' }}>
-        Sign out
-      </button>
-    </>
-  );
 
   return (
     <>
-      {aiConfigOpen && <AiConfigPanel onClose={() => setAiConfigOpen(false)} />}
-      {analyticsOpen && <AnalyticsModal trackerData={trackerData} onClose={() => setAnalyticsOpen(false)} />}
-      <header className="header-bar" style={{ position: 'relative' }}>
-        {/* Left */}
-        <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+      {analyticsOpen && (
+        <AnalyticsModal trackerData={trackerData} onClose={() => setAnalyticsOpen(false)} />
+      )}
+
+      <header style={{
+        position: 'relative',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        background: bg,
+        padding: isMobile ? '12px 14px' : '14px 18px',
+        borderRadius: '16px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+        border: `1px solid ${border}`,
+        gap: '8px',
+        flexWrap: 'nowrap',
+      }}>
+
+        {/* ── Left: Avatar + Greeting ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
           <div style={{
-            width:'40px', height:'40px', borderRadius:'12px',
-            background:'var(--accent)', display:'flex', alignItems:'center',
-            justifyContent:'center', fontSize:'1.1rem', flexShrink:0,
-            boxShadow:'0 4px 12px var(--accent-glow)'
+            width: isMobile ? '36px' : '40px',
+            height: isMobile ? '36px' : '40px',
+            borderRadius: '12px', background: '#3b82f6', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: isMobile ? '1rem' : '1.1rem', color: '#fff',
           }}>💳</div>
-          <div>
-            <p style={{ fontSize:'0.72rem', fontWeight:500, color:'var(--text-3)', marginBottom:'1px', letterSpacing:'0.01em' }}>
-              {greeting()},
-            </p>
-            <h1 style={{ fontSize:'1.05rem', fontWeight:700, color:'var(--text-1)',
-              letterSpacing:'-0.03em', lineHeight:1.2 }}>
-              {user?.name || 'User'} 👋
+
+          <div style={{ minWidth: 0 }}>
+            {/* On mobile: hide greeting, show only name */}
+            {!isMobile && (
+              <p style={{
+                fontSize: '0.7rem', fontWeight: 500,
+                color: text2, marginBottom: '1px',
+                whiteSpace: 'nowrap',
+              }}>{greeting()},</p>
+            )}
+            <h1 style={{
+              fontSize: isMobile ? '0.95rem' : '1.05rem',
+              fontWeight: 700, color: text1,
+              letterSpacing: '-0.03em',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              maxWidth: isMobile ? '120px' : '200px',
+            }}>
+              {isMobile ? `${user?.name || 'User'} 👋` : `${user?.name || 'User'} 👋`}
             </h1>
           </div>
         </div>
 
-        {/* Right controls wrapper */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Dark mode toggle (Always visible) */}
-          <button
-            onClick={()=>setDarkMode(d=>!d)}
-            className="btn btn-ghost"
-            style={{ padding:'8px 12px', fontSize:'1rem', minWidth:'38px' }}
-            title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          >
+        {/* ── Right: Actions ── */}
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          gap: isMobile ? '4px' : '8px',
+          flexShrink: 0,
+        }}>
+
+          {/* Dark mode toggle */}
+          <button onClick={() => setDarkMode(d => !d)} style={iconBtn} title="Toggle theme">
             {darkMode ? '☀️' : '🌙'}
           </button>
 
-          {/* Desktop Controls (Hidden on mobile) */}
-          <div className="header-controls">
-            {renderControls(false)}
+          {/* Menu dropdown */}
+          <div style={{ position: 'relative' }} ref={menuRef}>
+            <button onClick={() => setMenuOpen(o => !o)} style={menuBtn}>
+              ☰ {!isMobile && 'Menu'}
+            </button>
+
+            {menuOpen && (
+              <div style={{
+                position: 'absolute', right: 0, top: 'calc(100% + 8px)',
+                background: menuBg, border: `1px solid ${border}`,
+                borderRadius: '12px', padding: '8px', zIndex: 200,
+                display: 'flex', flexDirection: 'column', gap: '4px',
+                minWidth: isMobile ? '180px' : '210px',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
+              }}>
+                <ImportStatement
+                  accounts={accounts}
+                  onSuccess={() => { fetchTrackerData?.(); setMenuOpen(false); }}
+                  darkMode={darkMode}
+                />
+
+                <MenuOption
+                  icon="📊" label="Analytics" darkMode={darkMode} text1={text1}
+                  onClick={() => { setAnalyticsOpen(true); setMenuOpen(false); }}
+                />
+                <MenuOption
+                  icon="↓" label="Download Report" darkMode={darkMode} text1={text1}
+                  onClick={() => { setReportOpen(true); setMenuOpen(false); }}
+                />
+
+                <div style={{ height: '1px', background: border, margin: '4px 0' }} />
+
+                <MenuOption
+                  icon="🔄" label="Reset Data" danger darkMode={darkMode} text1={text1}
+                  onClick={async () => {
+                    if (window.confirm('⚠️ Reset all data?')) {
+                      try { await api.delete('/tracker/reset'); window.location.reload(); }
+                      catch (e) { alert('Failed: ' + e.message); }
+                    }
+                    setMenuOpen(false);
+                  }}
+                />
+
+                <div style={{ height: '1px', background: border, margin: '4px 0' }} />
+
+                <MenuOption
+                  icon="↩" label="Sign Out" danger darkMode={darkMode} text1={text1}
+                  onClick={() => { setMenuOpen(false); setIsLoggedIn(false); }}
+                />
+              </div>
+            )}
           </div>
 
-          {/* Hamburger Button (Visible on mobile) */}
-          <button className="hamburger-btn" onClick={()=>setMobileMenuOpen(!mobileMenuOpen)}>
-            ☰
-          </button>
 
-          {/* Mobile Dropdown Menu */}
-          {mobileMenuOpen && (
-            <div className="header-mobile-menu">
-              {renderControls(true)}
-            </div>
-          )}
         </div>
       </header>
 
-      {/* Report Modal */}
+      {/* ── Report Modal ── */}
       {reportOpen && (
-        <div className="modal-bg" onClick={e=>e.target===e.currentTarget&&setReportOpen(false)}>
-          <div className="card anim-card" style={{
-            maxWidth:'440px', width:'100%', padding:'1.75rem',
-            boxShadow:'var(--shadow-xl)'
+        <div
+          onClick={e => e.target === e.currentTarget && setReportOpen(false)}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.6)', zIndex: 999,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div style={{
+            maxWidth: '440px', width: '100%', padding: '1.75rem',
+            background: bg, color: text1, borderRadius: '16px',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
           }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.5rem' }}>
-              <h2 style={{ fontSize:'1rem', fontWeight:700, letterSpacing:'-0.03em' }}>Download Report</h2>
-              <button className="btn btn-icon" onClick={()=>setReportOpen(false)}>✕</button>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Download Report</h2>
+              <button onClick={() => setReportOpen(false)} style={{
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                fontSize: '1.2rem', color: text2,
+              }}>✕</button>
             </div>
 
-            {/* Range tabs */}
-            <div style={{ display:'flex', gap:'6px', marginBottom:'1.25rem' }}>
-              {[['all','All time'],['month','By month'],['date','By date']].map(([v,l])=>(
-                <button key={v} type="button"
-                  onClick={()=>setRangeType(v)}
-                  style={{
-                    flex:1, padding:'8px 6px', border:'1.5px solid', borderRadius:'10px',
-                    fontFamily:'inherit', fontWeight:600, fontSize:'0.78rem', cursor:'pointer',
-                    letterSpacing:'-0.01em', transition:'all 0.2s',
-                    background: rangeType===v ? 'var(--accent-glow)' : 'var(--bg-3)',
-                    borderColor: rangeType===v ? 'var(--accent)' : 'var(--border)',
-                    color: rangeType===v ? 'var(--accent)' : 'var(--text-3)',
-                  }}
-                >{l}</button>
+            {/* Range Tabs */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '1.25rem' }}>
+              {[['all', 'All time'], ['month', 'By month'], ['date', 'By date']].map(([v, l]) => (
+                <button key={v} type="button" onClick={() => setRangeType(v)} style={{
+                  flex: 1, padding: '10px 6px', border: '1.5px solid',
+                  borderRadius: '10px', fontWeight: 700, fontSize: '0.75rem',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  background: rangeType === v ? '#3b82f6' : 'transparent',
+                  borderColor: rangeType === v ? '#3b82f6' : border,
+                  color: rangeType === v ? '#fff' : text2,
+                }}>{l}</button>
               ))}
             </div>
 
-            {rangeType==='month' && (
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'1.25rem' }}>
-                <Label2 label="From month"><input type="month" className="field" value={fromMonth} min={minMonth} max={maxMonth} onChange={e=>setFromMonth(e.target.value)}/></Label2>
-                <Label2 label="To month"><input type="month" className="field" value={toMonth} min={fromMonth||minMonth} max={maxMonth} onChange={e=>setToMonth(e.target.value)}/></Label2>
+            {/* Month Range */}
+            {rangeType === 'month' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '1.25rem' }}>
+                <Label2 label="From month" darkMode={darkMode}>
+                  <input type="month" value={fromMonth} min={minMonth} max={maxMonth}
+                    onChange={e => setFromMonth(e.target.value)} className="field" style={{ width: '100%' }} />
+                </Label2>
+                <Label2 label="To month" darkMode={darkMode}>
+                  <input type="month" value={toMonth} min={fromMonth || minMonth} max={maxMonth}
+                    onChange={e => setToMonth(e.target.value)} className="field" style={{ width: '100%' }} />
+                </Label2>
               </div>
-            )}
-            {rangeType==='date' && (
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'1.25rem' }}>
-                <Label2 label="From date"><input type="date" className="field" value={fromDate} onChange={e=>setFromDate(e.target.value)}/></Label2>
-                <Label2 label="To date"><input type="date" className="field" value={toDate} min={fromDate} onChange={e=>setToDate(e.target.value)}/></Label2>
-              </div>
-            )}
-            {rangeType==='all' && (
-              <p style={{ color:'var(--text-3)', fontSize:'0.84rem', marginBottom:'1.25rem',
-                background:'var(--bg-3)', padding:'10px 14px', borderRadius:'10px',
-                border:'1px solid var(--border)' }}>
-                Your complete transaction history will be exported.
-              </p>
             )}
 
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
-              <button className="btn btn-red" onClick={()=>download('pdf')} style={{borderRadius:'12px'}}>PDF</button>
-              <button className="btn btn-green" onClick={()=>download('excel')} style={{borderRadius:'12px'}}>Excel</button>
+            {/* Date Range */}
+            {rangeType === 'date' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '1.25rem' }}>
+                <Label2 label="From date" darkMode={darkMode}>
+                  <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+                    className="field" style={{ width: '100%' }} />
+                </Label2>
+                <Label2 label="To date" darkMode={darkMode}>
+                  <input type="date" value={toDate} min={fromDate} onChange={e => setToDate(e.target.value)}
+                    className="field" style={{ width: '100%' }} />
+                </Label2>
+              </div>
+            )}
+
+            {/* Download Buttons */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <button onClick={() => download('pdf')} style={{
+                borderRadius: '12px', padding: '12px',
+                background: '#ef4444', color: '#fff',
+                border: 'none', cursor: 'pointer', fontWeight: 800, fontFamily: 'inherit',
+              }}>📄 PDF</button>
+              <button onClick={() => download('excel')} style={{
+                borderRadius: '12px', padding: '12px',
+                background: '#22c55e', color: '#fff',
+                border: 'none', cursor: 'pointer', fontWeight: 800, fontFamily: 'inherit',
+              }}>📊 Excel</button>
             </div>
           </div>
         </div>
@@ -222,10 +301,39 @@ export default function Header({ user, trackerData, selectedAccountId, setIsLogg
   );
 }
 
-function Label2({ label, children }) {
+// ─── Menu Option ──────────────────────────────────────────────────────────────
+function MenuOption({ icon, label, onClick, danger, darkMode, text1 }) {
+  const [hover, setHover] = useState(false);
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:'5px' }}>
-      <span style={{ fontSize:'0.75rem', fontWeight:600, color:'var(--text-3)' }}>{label}</span>
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: '100%', textAlign: 'left',
+        padding: '10px 12px', fontSize: '0.85rem',
+        background: hover ? (darkMode ? '#1e293b' : '#f8fafc') : 'transparent',
+        border: 'none', cursor: 'pointer', borderRadius: '8px',
+        color: danger ? '#ef4444' : text1,
+        display: 'flex', alignItems: 'center', gap: '8px',
+        fontFamily: 'inherit', fontWeight: 500,
+        transition: 'background 0.15s',
+      }}
+    >
+      <span>{icon}</span> {label}
+    </button>
+  );
+}
+
+// ─── Label Helper ─────────────────────────────────────────────────────────────
+function Label2({ label, children, darkMode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <span style={{
+        fontSize: '0.7rem', fontWeight: 700,
+        color: darkMode ? '#94a3b8' : '#64748b',
+        textTransform: 'uppercase',
+      }}>{label}</span>
       {children}
     </div>
   );

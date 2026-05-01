@@ -1,9 +1,45 @@
-/* App.css - All global component styles are in index.css */
-/* This file is intentionally minimal */
+/* App.css - Responsive overrides */
 
+/* ── Full width fix ── */
+html, body, #root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* ── Mobile: stack sidebar ON TOP of transactions ── */
 @media (max-width: 768px) {
-  /* Responsive grid for dashboard */
   .dashboard-grid {
     grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* Sidebar horizontal scroll on mobile */
+  .dashboard-grid > *:first-child {
+    /* Sidebar cards side by side horizontal on mobile */
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    gap: 10px !important;
+    padding-bottom: 4px !important;
+    scrollbar-width: none !important;
+  }
+
+  .dashboard-grid > *:first-child::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Each card inside sidebar — fixed width on mobile */
+  .dashboard-grid > *:first-child > .card {
+    min-width: 200px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* content-grid (form + transactions) stack on mobile */
+  .content-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
   }
 }

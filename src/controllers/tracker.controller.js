@@ -1,8 +1,14 @@
-    export const getTrackerData = async (c) => {
+export const getTrackerData = async (c) => {
         try {
             const user = c.get('user');
             const db = c.env.expense_tracker_db;
-            const month = c.req.query('month'); // e.g., '2026-04'
+            const month = c.req.query('month'); // Fallback ke liye
+            
+            // 1. Naye Filter Parameters Fetch Karein
+            const startDate = c.req.query('startDate');
+            const endDate = c.req.query('endDate');
+            const type = c.req.query('type'); // 'all', 'income', 'expense'
+            const search = c.req.query('search');
 
             // Get user settings and profile
             const userData = await db.prepare("SELECT name, email, expense_limit, is_saving_mode FROM USERS WHERE id = ?").bind(user.id).first();
@@ -15,7 +21,7 @@
                 WHERE t.user_id = ? ORDER BY t.created_at DESC
             `).bind(user.id).all();
             
-            // Get all accounts and calculate their all-time balances
+            // Get all accounts and calculate their all-time balances (Original logic)
             const accountsResult = await db.prepare("SELECT * FROM ACCOUNTS WHERE user_id = ?").bind(user.id).all();
             
             const accountsWithBalance = accountsResult.results.map(acc => {
@@ -30,24 +36,47 @@
                 return { ...acc, balance: accIncome - accExpense };
             });
 
-            // Filter transactions for the selected month
-            let monthTxns = allTxns.results;
-            if (month) {
-                monthTxns = allTxns.results.filter(t => t.created_at.startsWith(month));
+            // 2. --- ADVANCED FILTERING LOGIC ---
+            let filteredTxns = allTxns.results;
+
+            // Date Range ya Month (Fallback) se filter
+            if (startDate && endDate) {
+                filteredTxns = filteredTxns.filter(t => {
+                    // Agar timestamp mein time bhi hai, toh sirf date nikalo (e.g., '2026-05-01')
+                    const txDate = t.created_at ? t.created_at.split(' ')[0] : '';
+                    return txDate >= startDate && txDate <= endDate;
+                });
+            } else if (month) {
+                 filteredTxns = filteredTxns.filter(t => t.created_at && t.created_at.startsWith(month));
             }
 
-            // Calculate Monthly totals (Includes hidden transactions as per user request)
+            // Transaction Type (Income ya Expense)
+            if (type && type !== 'all') {
+                filteredTxns = filteredTxns.filter(t => t.type === type);
+            }
+
+            // Search (Description ya Account Name ke basis par)
+            if (search) {
+                const query = search.toLowerCase();
+                filteredTxns = filteredTxns.filter(t => {
+                    const descMatch = t.description && t.description.toLowerCase().includes(query);
+                    const accMatch = t.account_name && t.account_name.toLowerCase().includes(query);
+                    return descMatch || accMatch;
+                });
+            }
+
+            // 3. Calculate Monthly/Filtered totals (Includes hidden transactions as per user request)
             let monthlyIncome = 0;
             let monthlyExpenses = 0;
-            monthTxns.forEach(t => {
-                if (!t.description.includes('(Account Closing)')) {
+            filteredTxns.forEach(t => {
+                if (!t.description || !t.description.includes('(Account Closing)')) {
                     if (t.type === 'income') monthlyIncome += t.amount;
                     else if (t.type === 'expense') monthlyExpenses += t.amount;
                 }
             });
 
             // Hide transactions that were deleted by the user from the UI
-            const visibleMonthTxns = monthTxns.filter(t => t.is_hidden === 0);
+            const visibleMonthTxns = filteredTxns.filter(t => t.is_hidden === 0);
 
             // Get list of months that have data
             const monthSet = new Set();
@@ -60,14 +89,15 @@
                 user: { id: user.id, email: userData?.email || user.email, name: userData?.name || user.name || 'User' },
                 expense_limit: userData?.expense_limit || 0,
                 is_saving_mode: userData?.is_saving_mode ? true : false,
-                total_income: monthlyIncome,
-                total_expenses: monthlyExpenses,
-                transactions: visibleMonthTxns,
-                accounts: accountsWithBalance,
+                total_income: monthlyIncome, // Naya filtered income
+                total_expenses: monthlyExpenses, // Naya filtered expense
+                transactions: visibleMonthTxns, // Naya filtered array
+                accounts: accountsWithBalance, // Original balance
                 available_months,
                 status: 200
             }, 200);
         } catch (error) {
+            console.error("Tracker Data Error:", error);
             return c.json({ message: "internal server error", status: 500 }, 500);
         }
     };
