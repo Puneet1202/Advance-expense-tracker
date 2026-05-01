@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { fmt } from '../../utils/formatCurrency';
+import CategoryChart, { CATEGORY_CONFIG, guessCategory } from './CategoryChart';
 
 // ─── Currency Conversion Utility ────────────────────────────────────────────
 const CACHE_KEY = 'currency_cache'; // shared with CurrencyWidget
@@ -196,6 +197,9 @@ export default function TransactionArea({ trackerData, fetchTrackerData,
         </div>
       )}
 
+      {/* Category Breakdown Chart */}
+      <CategoryChart transactions={transactions} />
+
       {/* Form + History */}
       <div className="content-grid">
 
@@ -386,11 +390,16 @@ export default function TransactionArea({ trackerData, fetchTrackerData,
                       whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                       {t.description||'No description'}
                     </p>
-                    <p style={{ fontSize:'0.72rem', color:'var(--text-4)', marginTop:'2px' }}>
-                      <span style={{
-                        background:'var(--bg-4)', padding:'1px 7px', borderRadius:'6px',
-                        marginRight:'5px', color:'var(--text-3)', fontWeight:500
-                      }}>{t.account_name||'General'}</span>
+                    <p style={{ fontSize:'0.72rem', color:'var(--text-4)', marginTop:'2px', display:'flex', alignItems:'center', gap:'5px', flexWrap:'wrap' }}>
+                      {/* Category badge */}
+                      {(() => { const cat = guessCategory(t); const cfg = CATEGORY_CONFIG[cat]||CATEGORY_CONFIG.Other; return (
+                        <span style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`,
+                          padding:'1px 6px', borderRadius:'6px', fontWeight:600, fontSize:'0.68rem', flexShrink:0 }}>
+                          {cfg.emoji} {cat}
+                        </span>
+                      ); })()}
+                      <span style={{ background:'var(--bg-4)', padding:'1px 7px', borderRadius:'6px',
+                        color:'var(--text-3)', fontWeight:500 }}>{t.account_name||'General'}</span>
                       {fmtDate(t.created_at)}
                     </p>
                   </div>
@@ -476,11 +485,16 @@ export default function TransactionArea({ trackerData, fetchTrackerData,
                         whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                         {t.description||'No description'}
                       </p>
-                      <p style={{ fontSize:'0.75rem', color:'var(--text-4)', marginTop:'3px' }}>
-                        <span style={{
-                          background:'var(--bg-4)', padding:'2px 8px', borderRadius:'6px',
-                          marginRight:'6px', color:'var(--text-3)', fontWeight:500
-                        }}>{t.account_name||'General'}</span>
+                      <p style={{ fontSize:'0.75rem', color:'var(--text-4)', marginTop:'3px', display:'flex', alignItems:'center', gap:'5px', flexWrap:'wrap' }}>
+                        {/* Category badge */}
+                        {(() => { const cat = guessCategory(t); const cfg = CATEGORY_CONFIG[cat]||CATEGORY_CONFIG.Other; return (
+                          <span style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`,
+                            padding:'1px 7px', borderRadius:'6px', fontWeight:600, fontSize:'0.72rem', flexShrink:0 }}>
+                            {cfg.emoji} {cat}
+                          </span>
+                        ); })()}
+                        <span style={{ background:'var(--bg-4)', padding:'2px 8px', borderRadius:'6px',
+                          color:'var(--text-3)', fontWeight:500 }}>{t.account_name||'General'}</span>
                         {fmtDate(t.created_at)}
                       </p>
                     </div>
