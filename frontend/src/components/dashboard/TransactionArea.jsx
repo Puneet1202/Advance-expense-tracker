@@ -137,7 +137,7 @@ export default function TransactionArea({ trackerData, fetchTrackerData,
   const filtered = transactions.filter(t=>{
     if(selectedAccountId && t.account_id!==selectedAccountId) return false;
     if(typeFilter!=='all' && t.type!==typeFilter) return false;
-    if(search && !t.description?.toLowerCase().includes(search.toLowerCase())) return false;
+    if(search && !t.description?.toLowerCase().includes(search.toLowerCase()) && !guessCategory(t).toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 

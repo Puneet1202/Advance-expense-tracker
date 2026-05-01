@@ -100,43 +100,45 @@ useEffect(() => {
   if (!isLoggedIn) return <AuthForm setIsLoggedIn={setIsLoggedIn} setUser={setUser}  onLoginSuccess={fetchTrackerData}/>;
 
   return (
-    <div style={{ minHeight:'100vh', background:'var(--bg)', transition:'background 0.3s' }}>
-      <div style={{ maxWidth:'1280px', margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
+    <>
+      <div style={{ minHeight:'100vh', background:'var(--bg)', transition:'background 0.3s' }}>
+        <div style={{ maxWidth:'1280px', margin:'0 auto', padding:'1.25rem 1.25rem 3rem' }}>
 
-        {/* Header */}
-        <div style={{ marginBottom:'1rem' }}>
-          <Header
-            user={user} trackerData={trackerData}
-            selectedAccountId={selectedAccountId} setIsLoggedIn={setIsLoggedIn}
-            currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
-            availableMonths={trackerData.available_months||[]}
-            darkMode={darkMode} setDarkMode={setDarkMode}
-            fetchTrackerData={fetchTrackerData}
-          />
+          {/* Header */}
+          <div style={{ marginBottom:'1rem' }}>
+            <Header
+              user={user} trackerData={trackerData}
+              selectedAccountId={selectedAccountId} setIsLoggedIn={setIsLoggedIn}
+              currentMonth={currentMonth} setCurrentMonth={setCurrentMonth}
+              availableMonths={trackerData.available_months||[]}
+              darkMode={darkMode} setDarkMode={setDarkMode}
+              fetchTrackerData={fetchTrackerData}
+            />
+          </div>
+
+          {/* Dashboard grid — responsive via CSS class */}
+          <div className="dashboard-grid">
+            <Sidebar
+              trackerData={trackerData} fetchTrackerData={fetchTrackerData}
+              selectedAccountId={selectedAccountId} setSelectedAccountId={setSelectedAccountId}
+            />
+            <TransactionArea
+              trackerData={trackerData} fetchTrackerData={fetchTrackerData}
+              selectedAccountId={selectedAccountId} setSelectedAccountId={setSelectedAccountId}
+              currentMonth={currentMonth}
+            />
+          </div>
+
+          {/* Footer */}
+          <p style={{ textAlign:'center', color:'var(--text-4)', fontSize:'0.72rem',
+            marginTop:'2.5rem', letterSpacing:'-0.01em' }}>
+            ExpenseTracker · Built with care
+          </p>
         </div>
-
-        {/* Dashboard grid — responsive via CSS class */}
-        <div className="dashboard-grid">
-          <Sidebar
-            trackerData={trackerData} fetchTrackerData={fetchTrackerData}
-            selectedAccountId={selectedAccountId} setSelectedAccountId={setSelectedAccountId}
-          />
-          <TransactionArea
-            trackerData={trackerData} fetchTrackerData={fetchTrackerData}
-            selectedAccountId={selectedAccountId} setSelectedAccountId={setSelectedAccountId}
-            currentMonth={currentMonth}
-          />
-        </div>
-
-        {/* Footer */}
-        <p style={{ textAlign:'center', color:'var(--text-4)', fontSize:'0.72rem',
-          marginTop:'2.5rem', letterSpacing:'-0.01em' }}>
-          ExpenseTracker · Built with care
-        </p>
       </div>
-    </div>
 
-    {/* Floating AI Chat Button */}
-    <AiChatButton trackerData={trackerData} fetchTrackerData={fetchTrackerData} />
+      {/* Floating AI Chat Button */}
+      <AiChatButton trackerData={trackerData} fetchTrackerData={fetchTrackerData} />
+    </>
   );
 }

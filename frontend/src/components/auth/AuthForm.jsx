@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import api from '../../api/axios';
+import { useNavigate } from 'react-router-dom';
 
-export default function AuthForm({ setIsLoggedIn, setUser }) {
+export default function AuthForm({ onLoginSuccess }) {
   const [tab, setTab]       = useState('login');
   const [form, setForm]     = useState({ name:'', email:'', password:'' });
   const [msg, setMsg]       = useState('');
@@ -16,7 +17,8 @@ export default function AuthForm({ setIsLoggedIn, setUser }) {
     try {
       if (tab === 'login') {
         const r = await api.post('/auth/login', { email: form.email, password: form.password });
-        setUser(r.data.user); setIsLoggedIn(true);
+        await onLoginSuccess(r.data);
+        navigate('/dashboard');
       } else {
         const r = await api.post('/auth/register', form);
         setMsg(r.data.message);
