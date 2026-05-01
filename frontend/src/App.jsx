@@ -4,6 +4,7 @@ import AuthForm from './components/auth/AuthForm';
 import Header from './components/dashboard/Header';
 import Sidebar from './components/dashboard/Sidebar';
 import TransactionArea from './components/dashboard/TransactionArea';
+import AiChatButton from './features/ai-chat/AiChatButton';
 
 export default function App() {
   const [isLoading, setIsLoading]   = useState(true);
@@ -134,5 +135,8 @@ useEffect(() => {
         </p>
       </div>
     </div>
+
+    {/* Floating AI Chat Button */}
+    <AiChatButton trackerData={trackerData} fetchTrackerData={fetchTrackerData} />
   );
 }

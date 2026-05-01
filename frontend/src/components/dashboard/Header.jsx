@@ -72,9 +72,9 @@ export default function Header({ user, trackerData, selectedAccountId, setIsLogg
         📊 Analytics
       </button>
 
-      {/* AI Config */}
+      {/* AI Config — Hidden (moved to AI Chatbot → Rules tab) */}
       <button className="btn btn-ghost" onClick={()=>{ setAiConfigOpen(true); if(isMobile) setMobileMenuOpen(false); }}
-        style={{ padding:'8px 12px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto' }}
+        style={{ padding:'8px 12px', fontSize:'0.82rem', width: isMobile ? '100%' : 'auto', display:'none' }}
         title="AI Instructions configure karo"
       >
         🧠 AI Config
