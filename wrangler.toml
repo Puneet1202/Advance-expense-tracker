@@ -1,0 +1,8 @@
+name = "expense-tracker"
+main = "src/app.js"
+compatibility_date = "2026-04-28"
+
+[[d1_databases]]
+binding = "expense_tracker_db"
+database_name = "expense-tracker-db"
+database_id = "e9917c0e-da98-4a96-8dd0-530b000c9974"
