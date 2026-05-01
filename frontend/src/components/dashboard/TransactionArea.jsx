@@ -197,9 +197,6 @@ export default function TransactionArea({ trackerData, fetchTrackerData,
         </div>
       )}
 
-      {/* Category Breakdown Chart */}
-      <CategoryChart transactions={transactions} />
-
       {/* Form + History */}
       <div className="content-grid">
 
