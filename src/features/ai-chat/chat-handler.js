@@ -1,88 +1,110 @@
 /**
  * chat-handler.js (backend)
- * Gemini API ko call karta hai user ke financial data ke saath.
+ * D1 se aaya exact data Gemini ko bhejta hai.
+ * System prompt mein 100% accurate numbers inject hote hain.
  *
- * BUG 1 FIX: Ab Gemini ko pre-computed category sums nahi bhejte —
- *   seedha raw transactions bhejte hain taaki AI khud sahi se calculate kare.
- * BUG 2 FIX: System prompt mein clearly define kiya ki "faltu" sirf
- *   Shopping/Entertainment/Subscriptions hain — Food/Bills/Rent kabhi nahi.
+ * FIX: Frontend se aane wala incomplete data ab use nahi hota.
+ *      index.js ne D1 se data fetch kiya — yahan sirf format + Gemini call.
  */
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 // Description se category guess karna
-function guessCategory(t) {
-  const desc = (t.description || '').toLowerCase();
-  if (/salary|stipend|payroll/.test(desc)) return 'Salary';
-  if (/swiggy|zomato|food|restaurant|cafe|eat|biryani|pizza|burger/.test(desc)) return 'Food';
-  if (/amazon|flipkart|shopping|mall|mart|myntra|meesho/.test(desc)) return 'Shopping';
-  if (/petrol|diesel|fuel|bpcl|hp|iocl|shell/.test(desc)) return 'Fuel';
-  if (/uber|ola|metro|bus|cab|auto|rapido|train/.test(desc)) return 'Transport';
-  if (/electricity|water|gas|dth|broadband|internet|bill|recharge|jio|airtel/.test(desc)) return 'Bills';
-  if (/transfer|neft|imps|rtgs|upi sent/.test(desc)) return 'Transfer';
-  if (/netflix|spotify|prime|hotstar|subscription/.test(desc)) return 'Entertainment';
+function guessCategory(desc = '') {
+  const d = desc.toLowerCase();
+  if (/salary|stipend|payroll/.test(d))                              return 'Salary';
+  if (/swiggy|zomato|food|restaurant|cafe|eat|biryani|pizza|burger/.test(d)) return 'Food';
+  if (/amazon|flipkart|myntra|meesho|shopping|mall|mart/.test(d))   return 'Shopping';
+  if (/petrol|diesel|fuel|bpcl|hp|iocl|shell/.test(d))             return 'Fuel';
+  if (/uber|ola|metro|bus|cab|auto|rapido|train/.test(d))           return 'Transport';
+  if (/electricity|water|gas|dth|broadband|internet|bill|recharge|jio|airtel/.test(d)) return 'Bills';
+  if (/netflix|spotify|prime|hotstar|subscription/.test(d))         return 'Entertainment';
+  if (/transfer|neft|imps|rtgs/.test(d))                            return 'Transfer';
   return 'Other';
 }
 
-function buildSystemPrompt(transactions, balances) {
-  const balanceSummary = balances.map(a => `${a.name}: ₹${a.balance}`).join(', ') || 'N/A';
-  const accountNames   = balances.map(a => a.name).join(', ') || 'N/A';
+function buildSystemPrompt(transactions, accounts) {
+  // ── Account Balances ──────────────────────────────────────────────────────
+  const accountLines = accounts.length
+    ? accounts.map(a => `  ${a.name}: ₹${a.balance.toLocaleString('en-IN')}`).join('\n')
+    : '  Koi account nahi';
 
-  // BUG 1 FIX: Raw transactions with category pre-tagged — AI khud filter + sum karega
+  const accountNames = accounts.map(a => a.name).join(', ') || 'N/A';
+
+  // ── Category-wise totals (compute from raw D1 rows) ───────────────────────
+  const catMap = {};
+  let totalIncome  = 0;
+  let totalExpense = 0;
+
+  transactions.forEach(t => {
+    const cat = guessCategory(t.description);
+    if (t.type === 'expense') {
+      catMap[cat] = (catMap[cat] || 0) + t.amount;
+      totalExpense += t.amount;
+    } else if (t.type === 'income') {
+      totalIncome += t.amount;
+    }
+  });
+
+  const categoryLines = Object.entries(catMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, amt]) => `  ${cat}: ₹${Math.round(amt).toLocaleString('en-IN')}`)
+    .join('\n') || '  Koi expense nahi';
+
+  // ── Transaction list (last 50, dated rows) ────────────────────────────────
   const txnLines = transactions.slice(0, 50).map(t => {
-    const cat = guessCategory(t);
     const date = (t.created_at || '').substring(0, 10);
-    const acc  = t.account_name || 'Unknown';
-    return `${date} | ${t.type} | ₹${t.amount} | ${cat} | ${t.description || 'N/A'} | ${acc}`;
-  }).join('\n') || 'Koi transaction nahi';
+    const cat  = guessCategory(t.description);
+    const sign = t.type === 'income' ? '+' : '-';
+    return `  ${date} | ${sign}₹${t.amount} | ${cat} | ${t.description || 'N/A'} | ${t.account_name || 'N/A'}`;
+  }).join('\n') || '  Koi transaction nahi is mahine';
 
-  return `Tu Suraj ka personal finance assistant hai. Hindi/Hinglish mein baat kar. Friendly reh, short jawab de (2-4 lines max).
+  return `Tu Suraj ka personal finance assistant hai. Hindi/Hinglish mein baat kar. Friendly reh.
 
-ACCOUNT BALANCES: ${balanceSummary}
+User ka EXACT financial data D1 database se hai — 100% accurate. Sirf yahi use karo, koi assumption mat lao.
 
-TRANSACTIONS (format: date | type | amount | category | description | account):
+═══ ACCOUNTS (current balance) ═══
+${accountLines}
+
+═══ IS MAHINE TRANSACTIONS (${transactions.length} total) ═══
+Format: date | amount | category | description | account
 ${txnLines}
 
-CALCULATION RULES — ZARURI PADHO:
-- Category ka total nikalne ke liye: upar ki list mein se sirf woh rows lo jahan category match kare, phir unke amounts add karo.
-- Koi assumption mat lao. Jo data upar diya hai SIRF wohi use karo.
-- Galat number mat do — agar uncertain ho to kaho "mujhe exact data nahi dikh raha."
+═══ IS MAHINE CATEGORY-WISE EXPENSE ═══
+${categoryLines}
 
-BUG 2 FIX — "FALTU KHARCHA" DEFINITION:
-- Food ek ZARURI kharcha hai. Swiggy, Zomato, restaurant — kabhi faltu mat bolna.
-- Bills (electricity, internet, gas) ZARURI hain — kabhi faltu mat bolna.
-- Rent/Transport — ZARURI hain.
-- SIRF YEH FALTU HAIN: Shopping (clothes/electronics jo zaruri nahi), Entertainment (Netflix etc), Subscriptions (unused).
-- Agar poochha jaye "faltu kharche" to sirf Shopping/Entertainment/Subscriptions batao.
+  Kul Income:   ₹${Math.round(totalIncome).toLocaleString('en-IN')}
+  Kul Expense:  ₹${Math.round(totalExpense).toLocaleString('en-IN')}
+  Net:          ₹${Math.round(totalIncome - totalExpense).toLocaleString('en-IN')}
 
-GENERAL RULES:
-1. Specific numbers use kar upar diye transactions se
-2. Hindi/Hinglish mein baat kar
-3. Short aur helpful jawab de — 2-4 lines
-4. Agar user transaction add karna chahta ho to SIRF yeh JSON return kar (koi extra text nahi saath mein):
-{"action":"ADD_TRANSACTION","data":{"description":"item name","amount":500,"type":"expense","account_name":"${accountNames.split(',')[0]?.trim() || 'SBI'}","category":"Food"}}
-5. JSON mein type: "expense" ya "income"
-6. account_name EXACTLY in mein se hona chahiye: ${accountNames}
-7. Currency conversion puchhe to approximate INR rate se calculate kar`;
+═══ RULES ═══
+1. SIRF upar diya data use karo — koi assume mat karo
+2. Numbers exactly yahi hain — galat calculation mat karo
+3. Category sum ke liye: upar ki list se filter karo, phir add karo
+4. Hindi/Hinglish mein jawab do — 2-4 lines max
+5. Food, Bills, Rent, Transport ZARURI hain — kabhi "faltu" mat bolna
+   Sirf Shopping, Entertainment, Subscriptions faltu hote hain
+6. Agar user transaction add karna chahta ho to SIRF yeh JSON do (koi extra text nahi):
+{"action":"ADD_TRANSACTION","data":{"description":"item","amount":500,"type":"expense","account_name":"${accounts[0]?.name || 'SBI'}","category":"Food"}}
+7. account_name EXACTLY in mein se hona chahiye: ${accountNames}`;
 }
 
 /**
- * Main chat function
  * @param {string} message
- * @param {Array}  transactions — [{created_at, type, amount, description, account_name}]
- * @param {Array}  balances     — [{name, balance}]
+ * @param {Array}  transactions — D1 se fetched [{type, amount, description, created_at, account_name}]
+ * @param {Array}  accounts     — [{name, balance}]
  * @param {Array}  history      — [{role, content}]
  * @param {string} apiKey
  * @returns {Promise<{reply: string|null, action: object|null}>}
  */
-export async function handleChat(message, transactions, balances, history, apiKey) {
-  const systemPrompt = buildSystemPrompt(transactions, balances);
+export async function handleChat(message, transactions, accounts, history, apiKey) {
+  const systemPrompt = buildSystemPrompt(transactions, accounts);
 
   const contents = [
     { role: 'user',  parts: [{ text: systemPrompt }] },
-    { role: 'model', parts: [{ text: 'Samajh gaya! Main Suraj ka personal finance assistant hoon. Sirf actual data use karunga. Kya help chahiye?' }] },
+    { role: 'model', parts: [{ text: 'Samajh gaya! Main D1 database ka exact data dekh sakta hoon. Kya help chahiye?' }] },
     ...history.slice(-8).map(h => ({
-      role: h.role === 'user' ? 'user' : 'model',
+      role:  h.role === 'user' ? 'user' : 'model',
       parts: [{ text: h.content }]
     })),
     { role: 'user', parts: [{ text: message }] }
@@ -93,13 +115,13 @@ export async function handleChat(message, transactions, balances, history, apiKe
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents,
-      generationConfig: { temperature: 0.5, maxOutputTokens: 512 } // Lower temp = more accurate numbers
+      generationConfig: { temperature: 0.4, maxOutputTokens: 512 }
     })
   });
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Gemini error ${res.status}: ${err.substring(0, 100)}`);
+    throw new Error(`Gemini error ${res.status}: ${err.substring(0, 120)}`);
   }
 
   const data    = await res.json();
@@ -114,7 +136,7 @@ export async function handleChat(message, transactions, balances, history, apiKe
     try {
       action = JSON.parse(jsonMatch[0]);
       reply  = null;
-    } catch (e) { /* treat as normal text */ }
+    } catch (e) { /* normal text */ }
   }
 
   return { reply, action };
