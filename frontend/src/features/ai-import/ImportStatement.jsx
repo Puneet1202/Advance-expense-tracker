@@ -21,8 +21,12 @@ export default function ImportStatement({ accounts, onSuccess }) {
     isLoading,
     error,
     result,
+    pendingBalance,
+    balanceLoading,
     handleFileChange,
     handleSubmit,
+    handleBalanceConfirm,
+    handleBalanceSkip,
     reset,
   } = useImportStatement({ accounts, onSuccess });
 
@@ -72,20 +76,86 @@ export default function ImportStatement({ accounts, onSuccess }) {
               <button className="btn btn-icon" onClick={handleClose}>✕</button>
             </div>
 
-            {/* Success State */}
-            {result && (
+            {/* ── Balance Confirmation Step ─────────────────────────── */}
+            {result && pendingBalance && (
               <div style={{
-                background: 'var(--green-bg, rgba(34,197,94,0.1))',
-                border: '1px solid var(--green, #22c55e)',
+                background: 'var(--bg-3)',
+                border: '1.5px solid var(--accent)',
+                borderRadius: '14px',
+                padding: '1.25rem',
+                marginBottom: '1rem',
+              }}>
+                {/* Import summary line */}
+                <p style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '8px' }}>
+                  ✅ {result.imported} transactions import hue
+                  {result.skipped > 0 && <span style={{ fontWeight: 400, fontSize: '0.8rem', color: 'var(--text-3)', marginLeft: '6px' }}>({result.skipped} duplicate skip)</span>}
+                </p>
+
+                {/* Balance confirmation question */}
+                <div style={{
+                  background: 'var(--accent-glow)',
+                  border: '1px solid var(--accent)',
+                  borderRadius: '10px',
+                  padding: '12px 14px',
+                  marginBottom: '1rem',
+                }}>
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-2)', marginBottom: '4px', fontWeight: 600 }}>
+                    💰 Balance Update Karna Hai?
+                  </p>
+                  <p style={{ fontSize: '0.88rem', color: 'var(--text-1)', fontWeight: 700 }}>
+                    {pendingBalance.account_name} balance{' '}
+                    <span style={{ color: 'var(--accent)' }}>
+                      ₹{pendingBalance.closing_balance.toLocaleString('en-IN')}
+                    </span>{' '}
+                    update kiya — Sahi hai?
+                  </p>
+                </div>
+
+                {/* Yes / No buttons */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <button
+                    id="balance-confirm-yes"
+                    className="btn btn-primary"
+                    onClick={handleBalanceConfirm}
+                    disabled={balanceLoading}
+                    style={{ borderRadius: '12px', padding: '10px', fontSize: '0.88rem',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  >
+                    {balanceLoading ? (
+                      <span style={{
+                        display: 'inline-block', width: '13px', height: '13px',
+                        border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff',
+                        borderRadius: '50%', animation: 'spin 0.8s linear infinite',
+                      }} />
+                    ) : '✅'} Haan, Update Karo
+                  </button>
+                  <button
+                    id="balance-confirm-no"
+                    className="btn btn-ghost"
+                    onClick={handleBalanceSkip}
+                    disabled={balanceLoading}
+                    style={{ borderRadius: '12px', padding: '10px', fontSize: '0.88rem' }}
+                  >
+                    ❌ Nahi, Rehne Do
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Final Done State (after Yes/No chosen, no pending balance) ── */}
+            {result && !pendingBalance && (
+              <div style={{
+                background: 'rgba(34,197,94,0.08)',
+                border: '1px solid #22c55e',
                 borderRadius: '12px',
                 padding: '1rem',
                 marginBottom: '1rem',
               }}>
-                <p style={{ fontWeight: 700, color: 'var(--green, #22c55e)', fontSize: '0.95rem', marginBottom: '4px' }}>
-                  ✅ {result.message}
+                <p style={{ fontWeight: 700, color: '#22c55e', fontSize: '0.95rem', marginBottom: '4px' }}>
+                  ✅ {result.imported} transactions import ho gaye!
                 </p>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>
-                  {result.imported} import • {result.skipped} duplicate skip • Total {result.total}
+                  {result.skipped} duplicate skip • Total {result.total}
                 </p>
                 <button
                   className="btn btn-ghost"
@@ -97,7 +167,7 @@ export default function ImportStatement({ accounts, onSuccess }) {
               </div>
             )}
 
-            {/* Form — hide on success */}
+            {/* Form — hide after import */}
             {!result && (
               <>
                 {/* Account Select */}

@@ -27,3 +27,15 @@ export async function uploadStatement(file, accountId) {
 
   return response.data;
 }
+
+/**
+ * User ke "Yes" confirm karne pe balance adjust karta hai
+ * @param {number} accountId - Account ID
+ * @param {number} targetBalance - Statement mein dikha closing balance
+ */
+export async function confirmBalance(accountId, targetBalance) {
+  const response = await api.post(`/tracker/account/${accountId}/adjust-balance`, {
+    target_balance: targetBalance,
+  });
+  return response.data;
+}

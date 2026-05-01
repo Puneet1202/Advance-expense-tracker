@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { getTrackerData, updateSettings, addTransaction, deleteTransaction, addAccount, deleteAccount, resetAllData } from "../controllers/tracker.controller";
-import { importStatementHandler } from "../features/ai-import/index.js";
+import { importStatementHandler, adjustBalanceHandler } from "../features/ai-import/index.js";
 
 const router = new Hono();
 
@@ -21,5 +21,8 @@ router.delete('/account/:id', deleteAccount);
 
 // AI Import Route — naya feature
 router.post('/import-statement', importStatementHandler);
+
+// Balance Adjustment Route — import ke baad balance confirm karne pe
+router.post('/account/:id/adjust-balance', adjustBalanceHandler);
 
 export default router;

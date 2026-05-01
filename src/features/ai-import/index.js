@@ -124,11 +124,41 @@ export const importStatementHandler = async (c) => {
       }
     }
 
+    // ── Balance Calculation ──────────────────────────────────────────
+    // Step 1: Gemini ki last transaction mein balance field check karo
+    let closingBalance = null;
+    const lastTxnWithBalance = [...transactions].reverse().find(t => t.balance != null && !isNaN(Number(t.balance)));
+    if (lastTxnWithBalance) {
+      closingBalance = Math.round(Number(lastTxnWithBalance.balance));
+    }
+
+    // Step 2: Agar Gemini ne balance nahi diya, to formula se calculate karo
+    // Current balance (all txns including just-imported ones)
+    if (closingBalance === null) {
+      const allTxns = await db.prepare(
+        'SELECT type, amount FROM TRANSACTIONS WHERE user_id = ? AND account_id = ?'
+      ).bind(user.id, Number(account_id)).all();
+
+      let calc = 0;
+      allTxns.results.forEach(t => {
+        if (t.type === 'income') calc += t.amount;
+        if (t.type === 'expense') calc -= t.amount;
+      });
+      closingBalance = Math.round(calc);
+    }
+
+    // Account name fetch karo confirmation message ke liye
+    const accountInfo = await db.prepare('SELECT name FROM ACCOUNTS WHERE id = ? AND user_id = ?')
+      .bind(Number(account_id), user.id).first();
+
     return c.json({
       message: `${imported} transactions import ho gaye!`,
       imported,
       skipped,
       total: transactions.length,
+      closing_balance: closingBalance,
+      account_name: accountInfo?.name || 'Account',
+      account_id: Number(account_id),
       errors: errors.length > 0 ? errors.slice(0, 5) : undefined,
       status: 200,
     }, 200);
@@ -139,5 +169,65 @@ export const importStatementHandler = async (c) => {
       message: error.message || 'Statement import karne mein error aaya',
       status: 500,
     }, 500);
+  }
+};
+
+/**
+ * adjustBalanceHandler
+ * Route: POST /api/tracker/account/:id/adjust-balance
+ * User ke "Yes" confirm karne pe account ka balance adjust karta hai.
+ * Schema change nahi — ek "Balance Adjustment" transaction insert karta hai.
+ */
+export const adjustBalanceHandler = async (c) => {
+  try {
+    const user = c.get('user');
+    const db = c.env.expense_tracker_db;
+    const accountId = Number(c.req.param('id'));
+    const { target_balance } = await c.req.json();
+
+    if (target_balance == null || isNaN(Number(target_balance))) {
+      return c.json({ message: 'target_balance required', status: 400 }, 400);
+    }
+
+    // Account user ka hai verify karo
+    const accCheck = await db.prepare('SELECT id FROM ACCOUNTS WHERE id = ? AND user_id = ?')
+      .bind(accountId, user.id).first();
+    if (!accCheck) return c.json({ message: 'Account nahi mila', status: 404 }, 404);
+
+    // Current balance calculate karo
+    const txns = await db.prepare(
+      'SELECT type, amount FROM TRANSACTIONS WHERE user_id = ? AND account_id = ?'
+    ).bind(user.id, accountId).all();
+
+    let currentBalance = 0;
+    txns.results.forEach(t => {
+      if (t.type === 'income') currentBalance += t.amount;
+      if (t.type === 'expense') currentBalance -= t.amount;
+    });
+
+    const diff = Math.round(Number(target_balance)) - Math.round(currentBalance);
+
+    // Agar difference negligible hai to kuch mat karo
+    if (Math.abs(diff) < 1) {
+      return c.json({ message: 'Balance already sahi hai', adjusted: false, status: 200 }, 200);
+    }
+
+    const type = diff > 0 ? 'income' : 'expense';
+    const amount = Math.abs(diff);
+
+    await db.prepare(
+      'INSERT INTO TRANSACTIONS (user_id, type, amount, description, account_id) VALUES (?, ?, ?, ?, ?)'
+    ).bind(user.id, type, amount, 'Balance Adjustment (Statement Import)', accountId).run();
+
+    return c.json({
+      message: `Balance ₹${Math.round(Number(target_balance)).toLocaleString('en-IN')} kar diya gaya`,
+      adjusted: true,
+      adjustment_amount: diff,
+      status: 200,
+    }, 200);
+
+  } catch (error) {
+    console.error('Adjust Balance Error:', error);
+    return c.json({ message: error.message || 'Balance adjust nahi ho saka', status: 500 }, 500);
   }
 };
