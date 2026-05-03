@@ -39,5 +39,19 @@ app.onError((err,c)=>{
 app.route('/api/auth',authRouter);
 app.route('/api/tracker',trackerRouter);
 
+// Currency rates proxy — keeps API key server-side
+app.get('/api/currency/rates', async (c) => {
+  try {
+    const API_KEY = c.env.EXCHANGE_RATE_API_KEY;
+    const res = await fetch(`https://v6.exchangerate-api.com/v6/${API_KEY}/latest/INR`);
+    if (!res.ok) throw new Error('Failed to fetch rates');
+    const json = await res.json();
+    if (json.result !== 'success') throw new Error(json['error-type'] || 'API error');
+    return c.json({ conversion_rates: json.conversion_rates });
+  } catch (err) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 
 export default app;

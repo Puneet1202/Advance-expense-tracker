@@ -23,10 +23,6 @@ const CurrencyWidget = () => {
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  useEffect(() => {
-    fetchRates();
-  }, []);
-
   const fetchRates = async () => {
     try {
       // Check localStorage cache
@@ -42,12 +38,10 @@ const CurrencyWidget = () => {
       }
 
       // Fetch fresh rates
-      const API_KEY = import.meta.env.VITE_EXCHANGE_RATE_API_KEY;
-      const res = await fetch(`https://v6.exchangerate-api.com/v6/${API_KEY}/latest/INR`);
+      const res = await fetch('http://localhost:8787/api/currency/rates');
       if (!res.ok) throw new Error('Failed to fetch rates');
       const json = await res.json();
-
-      if (json.result !== 'success') throw new Error(json['error-type'] || 'API error');
+      if (json.error) throw new Error(json.error);
 
       const now = Date.now();
       localStorage.setItem(CACHE_KEY, JSON.stringify({ data: json.conversion_rates, timestamp: now }));
@@ -59,6 +53,10 @@ const CurrencyWidget = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchRates();
+  }, []);
 
   const handleRefresh = () => {
     localStorage.removeItem(CACHE_KEY);
