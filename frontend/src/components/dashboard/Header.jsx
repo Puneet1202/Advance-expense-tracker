@@ -113,7 +113,6 @@ export default function Header({
         gap: '8px',
         flexWrap: 'nowrap',
         minWidth: 0,
-        overflow: 'hidden',
       }}>
 
         {/* ── Left: Avatar + Greeting ── */}
@@ -167,13 +166,15 @@ export default function Header({
 
             {menuOpen && (
               <div style={{
-                position: 'absolute', right: 0, top: 'calc(100% + 8px)',
+                position: 'fixed',
+                top: isMobile ? '68px' : '74px',
+                right: isMobile ? '12px' : '24px',
                 background: menuBg, border: `1px solid ${border}`,
-                borderRadius: '12px', padding: '8px', zIndex: 200,
+                borderRadius: '12px', padding: '8px', zIndex: 9999,
                 display: 'flex', flexDirection: 'column', gap: '4px',
-                minWidth: isMobile ? '180px' : '210px',
-                maxWidth: 'calc(100vw - 32px)',
-                boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
+                minWidth: isMobile ? '200px' : '210px',
+                maxWidth: 'calc(100vw - 24px)',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
               }}>
                 <ImportStatement
                   accounts={accounts}
