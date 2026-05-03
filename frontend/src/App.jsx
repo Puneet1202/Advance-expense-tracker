@@ -130,7 +130,7 @@ export default function App() {
   return (
     <>
       <div style={{ minHeight:'100vh', background: darkMode ? '#0f172a' : '#f8fafc', transition:'background 0.3s' }}>
-        <div style={{ maxWidth:'1280px', margin:'0 auto', padding: isMobile ? '0.6rem 0.6rem 3rem' : '1.25rem 1.25rem 3rem', boxSizing:'border-box', width:'100%' }}>
+        <div style={{ maxWidth:'1280px', margin:'0 auto', padding: isMobile ? '0.6rem 0.6rem 3rem' : '1.25rem 1.25rem 3rem', boxSizing:'border-box', width:'100%', minWidth:0 }}>
 
           {/* ── Header ── */}
           <div style={{ marginBottom: '1rem' }}>
@@ -185,13 +185,13 @@ export default function App() {
                 {/* Date Range */}
                 <div>
                   <label style={labelStyle}>Date Range (Kab se kab tak)</label>
-                  <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'6px', flexWrap: 'wrap' }}>
                     <input type="date" value={startDate}
-                      onChange={e => setStartDate(e.target.value)} style={inputStyle}/>
+                      onChange={e => setStartDate(e.target.value)} style={{...inputStyle, minWidth:0, flex:1}}/>
                     <span style={{ color: darkMode ? '#94a3b8' : '#64748b', flexShrink:0 }}>-</span>
                     <input type="date" value={endDate}
-                      onChange={e => setEndDate(e.target.value)} style={inputStyle}/>
-                  </div>
+                      onChange={e => setEndDate(e.target.value)} style={{...inputStyle, minWidth:0, flex:1}}/>
+                </div>
                 </div>
 
                 {/* Transaction Type */}

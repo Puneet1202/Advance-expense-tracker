@@ -146,7 +146,10 @@ export default function AnalyticsModal({ trackerData, onClose }) {
         className="card anim-card"
         style={{
           width: '100%', maxWidth: '680px', margin: 'auto',
-          padding: '1.75rem 2rem', boxShadow: 'var(--shadow-xl)',
+          padding: 'clamp(1rem, 4vw, 1.75rem) clamp(0.75rem, 4vw, 2rem)',
+          boxShadow: 'var(--shadow-xl)',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
         }}
       >
         {/* Header */}
@@ -184,7 +187,7 @@ export default function AnalyticsModal({ trackerData, onClose }) {
               />
 
               {/* Category list */}
-              <div style={{ flex: 1, minWidth: '220px', display: 'flex',
+              <div style={{ flex: 1, minWidth: 0, display: 'flex',
                 flexDirection: 'column', gap: '10px' }}>
                 {sorted.map(({ cat, amt, cfg }) => {
                   const pct = grandTotal > 0 ? (amt / grandTotal * 100) : 0;

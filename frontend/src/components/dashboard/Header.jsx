@@ -112,6 +112,8 @@ export default function Header({
         border: `1px solid ${border}`,
         gap: '8px',
         flexWrap: 'nowrap',
+        minWidth: 0,
+        overflow: 'hidden',
       }}>
 
         {/* ── Left: Avatar + Greeting ── */}
@@ -138,7 +140,7 @@ export default function Header({
               fontWeight: 700, color: text1,
               letterSpacing: '-0.03em',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              maxWidth: isMobile ? '120px' : '200px',
+              maxWidth: isMobile ? 'min(150px, calc(100vw - 130px))' : '200px',
             }}>
               {isMobile ? `${user?.name || 'User'} 👋` : `${user?.name || 'User'} 👋`}
             </h1>
@@ -170,6 +172,7 @@ export default function Header({
                 borderRadius: '12px', padding: '8px', zIndex: 200,
                 display: 'flex', flexDirection: 'column', gap: '4px',
                 minWidth: isMobile ? '180px' : '210px',
+                maxWidth: 'calc(100vw - 32px)',
                 boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
               }}>
                 <ImportStatement

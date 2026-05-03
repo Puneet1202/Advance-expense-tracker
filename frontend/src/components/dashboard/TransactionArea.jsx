@@ -270,7 +270,7 @@ export default function TransactionArea({
 
         {/* ── Transactions List ── */}
         <div className="card anim-up" style={{
-          padding: '1.5rem', display: 'flex', flexDirection: 'column', minHeight: '500px'
+          padding: '1.5rem', display: 'flex', flexDirection: 'column', minHeight: '300px'
         }}>
           <p style={{ fontWeight: 700, fontSize: '0.875rem', marginBottom: '1rem' }}>
             Transactions <span className="badge badge-accent">{filtered.length}</span>

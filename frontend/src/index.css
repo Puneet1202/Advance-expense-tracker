@@ -70,7 +70,7 @@
 /* ─── BASE ──────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; overflow-x: hidden; }
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
@@ -79,6 +79,7 @@ body {
   min-height: 100vh;
   transition: background 0.3s ease, color 0.3s ease;
   letter-spacing: -0.01em;
+  overflow-x: hidden;
 }
 
 /* ─── SCROLLBAR ─────────────────────────────────── */
@@ -233,6 +234,7 @@ body {
   grid-template-columns: 280px 1fr;
   gap: 12px;
   align-items: start;
+  min-width: 0;
 }
 
 /* Stats row: 4 cards */
@@ -304,7 +306,14 @@ body {
   animation: fadeUp 0.2s ease forwards;
 }
 
-/* ─── MOBILE: below 900px ────────────────────────── */
+/* ─── LAPTOP: below 1100px ───────────────────────── */
+@media (max-width: 1100px) {
+  .dashboard-grid {
+    grid-template-columns: 240px 1fr;
+  }
+}
+
+/* ─── TABLET/MOBILE: below 900px ────────────────────────── */
 @media (max-width: 900px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -315,7 +324,7 @@ body {
   .content-grid {
     grid-template-columns: 1fr;
   }
-  
+
   /* Hide desktop header controls and show hamburger */
   .header-controls {
     display: none;
@@ -336,16 +345,35 @@ body {
     gap: 8px;
   }
   .dashboard-grid {
-    gap: 10px;
+    gap: 8px;
   }
   .content-grid {
-    gap: 10px;
+    gap: 8px;
+  }
+  /* Ensure cards don't overflow their grid column */
+  .card {
+    min-width: 0;
+  }
+}
+
+/* ─── PHONE: below 480px (iPhone SE / 14) ────────── */
+@media (max-width: 480px) {
+  .modal-bg {
+    padding: 0.75rem;
+    align-items: flex-end;
+  }
+  /* Modals slide up from bottom on small phones */
+  .anim-card {
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    max-height: 92vh;
+    overflow-y: auto;
   }
 }
 
 /* ─── EXTRA SMALL: below 400px ───────────────────── */
 @media (max-width: 400px) {
   .stats-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
   }
 }
