@@ -81,14 +81,16 @@ ${categoryLines}
 
 ═══ RULES ═══
 1. SIRF upar diya data use karo — koi assume mat karo
-2. Numbers exactly yahi hain — galat calculation mat karo
-3. Category sum ke liye: upar ki list se filter karo, phir add karo
-4. Hindi/Hinglish mein jawab do — 2-4 lines max
-5. Food, Bills, Rent, Transport ZARURI hain — kabhi "faltu" mat bolna
+2. "Kul Expense" EXACTLY ₹${Math.round(totalExpense).toLocaleString('en-IN')} hai — YAHI BOLNA HAI!
+3. "Kul Income" EXACTLY ₹${Math.round(totalIncome).toLocaleString('en-IN')} hai — YAHI BOLNA HAI!
+4. KABHI khud calculate mat karna — upar diye numbers FINAL hain!
+5. Category sum ke liye: upar ki list se filter karo, phir add karo
+6. Hindi/Hinglish mein jawab do — 2-4 lines max
+7. Food, Bills, Rent, Transport ZARURI hain — kabhi "faltu" mat bolna
    Sirf Shopping, Entertainment, Subscriptions faltu hote hain
-6. Agar user transaction add karna chahta ho to SIRF yeh JSON do (koi extra text nahi):
+8. Agar user transaction add karna chahta ho to SIRF yeh JSON do (koi extra text nahi):
 {"action":"ADD_TRANSACTION","data":{"description":"item","amount":500,"type":"expense","account_name":"${accounts[0]?.name || 'SBI'}","category":"Food"}}
-7. account_name EXACTLY in mein se hona chahiye: ${accountNames}`;
+9. account_name EXACTLY in mein se hona chahiye: ${accountNames}`;
 }
 
 /**
