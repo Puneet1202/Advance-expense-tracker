@@ -1,5 +1,5 @@
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
-const OLLAMA_MODEL = 'phi3:mini'
+const OLLAMA_MODEL = 'llama3'
 
 /**
  * Specialized Ollama Client for Expense Tracker
