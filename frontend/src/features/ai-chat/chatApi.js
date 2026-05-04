@@ -23,7 +23,7 @@ export async function sendChatMessage(message, _transactions, _balances, history
     history: history.slice(-8),
     // transactions aur balances ab backend D1 se fetch karta hai
   }, {
-    timeout: 30000,
+    timeout: 300000,
   });
   return res.data;
 }

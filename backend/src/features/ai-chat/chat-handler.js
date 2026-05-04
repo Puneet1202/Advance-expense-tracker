@@ -7,19 +7,21 @@
  *      index.js ne D1 se data fetch kiya — yahan sirf format + Gemini call.
  */
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+// const GEMINI_URL =http://localhost:4000
+
+const AI_ENGINE_URL = 'http://localhost:4000'
 
 // Description se category guess karna
 function guessCategory(desc = '') {
   const d = desc.toLowerCase();
-  if (/salary|stipend|payroll/.test(d))                              return 'Salary';
+  if (/salary|stipend|payroll/.test(d)) return 'Salary';
   if (/swiggy|zomato|food|restaurant|cafe|eat|biryani|pizza|burger/.test(d)) return 'Food';
-  if (/amazon|flipkart|myntra|meesho|shopping|mall|mart/.test(d))   return 'Shopping';
-  if (/petrol|diesel|fuel|bpcl|hp|iocl|shell/.test(d))             return 'Fuel';
-  if (/uber|ola|metro|bus|cab|auto|rapido|train/.test(d))           return 'Transport';
+  if (/amazon|flipkart|myntra|meesho|shopping|mall|mart/.test(d)) return 'Shopping';
+  if (/petrol|diesel|fuel|bpcl|hp|iocl|shell/.test(d)) return 'Fuel';
+  if (/uber|ola|metro|bus|cab|auto|rapido|train/.test(d)) return 'Transport';
   if (/electricity|water|gas|dth|broadband|internet|bill|recharge|jio|airtel/.test(d)) return 'Bills';
-  if (/netflix|spotify|prime|hotstar|subscription/.test(d))         return 'Entertainment';
-  if (/transfer|neft|imps|rtgs/.test(d))                            return 'Transfer';
+  if (/netflix|spotify|prime|hotstar|subscription/.test(d)) return 'Entertainment';
+  if (/transfer|neft|imps|rtgs/.test(d)) return 'Transfer';
   return 'Other';
 }
 
@@ -33,7 +35,7 @@ function buildSystemPrompt(transactions, accounts) {
 
   // ── Category-wise totals (compute from raw D1 rows) ───────────────────────
   const catMap = {};
-  let totalIncome  = 0;
+  let totalIncome = 0;
   let totalExpense = 0;
 
   transactions.forEach(t => {
@@ -54,7 +56,7 @@ function buildSystemPrompt(transactions, accounts) {
   // ── Transaction list (last 50, dated rows) ────────────────────────────────
   const txnLines = transactions.slice(0, 50).map(t => {
     const date = (t.created_at || '').substring(0, 10);
-    const cat  = guessCategory(t.description);
+    const cat = guessCategory(t.description);
     const sign = t.type === 'income' ? '+' : '-';
     return `  ${date} | ${sign}₹${t.amount} | ${cat} | ${t.description || 'N/A'} | ${t.account_name || 'N/A'}`;
   }).join('\n') || '  Koi transaction nahi is mahine';
@@ -97,45 +99,49 @@ ${categoryLines}
  * @param {string} apiKey
  * @returns {Promise<{reply: string|null, action: object|null}>}
  */
-export async function handleChat(message, transactions, accounts, history, apiKey) {
+// export async function handleChat(message, transactions, accounts, history, apiKey) {
+export async function handleChat(message, transactions, accounts, history) {
+
   const systemPrompt = buildSystemPrompt(transactions, accounts);
 
   const contents = [
-    { role: 'user',  parts: [{ text: systemPrompt }] },
+    { role: 'user', parts: [{ text: systemPrompt }] },
     { role: 'model', parts: [{ text: 'Samajh gaya! Main D1 database ka exact data dekh sakta hoon. Kya help chahiye?' }] },
     ...history.slice(-8).map(h => ({
-      role:  h.role === 'user' ? 'user' : 'model',
+      role: h.role === 'user' ? 'user' : 'model',
       parts: [{ text: h.content }]
     })),
     { role: 'user', parts: [{ text: message }] }
   ];
 
-  const res = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents,
-      generationConfig: { temperature: 0.4, maxOutputTokens: 512 }
-    })
-  });
+  const res = await fetch(`${AI_ENGINE_URL}/api/chat`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    question: message,
+    transactions,
+    systemPrompt,
+    history
+  })
+});
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Gemini error ${res.status}: ${err.substring(0, 120)}`);
-  }
+if (!res.ok) {
+  const err = await res.text();
+  throw new Error(`AI Engine error ${res.status}: ${err.substring(0, 120)}`);
+}
 
-  const data    = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
-    || 'Kuch samajh nahi aaya, dobara puchho.';
+const data = await res.json();
+const rawText = data?.answer?.trim()
+  || 'Kuch samajh nahi aaya, dobara puchho.';
 
   let action = null;
-  let reply  = rawText;
+  let reply = rawText;
 
   const jsonMatch = rawText.match(/\{[\s\S]*?"action"\s*:\s*"ADD_TRANSACTION"[\s\S]*?\}/);
   if (jsonMatch) {
     try {
       action = JSON.parse(jsonMatch[0]);
-      reply  = null;
+      reply = null;
     } catch (e) { /* normal text */ }
   }
 

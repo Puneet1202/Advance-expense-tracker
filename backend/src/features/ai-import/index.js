@@ -11,16 +11,15 @@
  * 5. D1 mein transactions save karta hai
  */
 
-import { extractCsvText } from './csv-handler.js';
-import { extractPdfBase64 } from './pdf-handler.js';
-import { parseWithGemini, parseWithGeminiPdf } from './gemini-parser.js';
+import { parseWithOllama, parseWithOllamaPdf } from './gemini-parser.js';
+
 
 /**
  * Main handler for AI statement import
  */
 export const importStatementHandler = async (c) => {
   try {
-    const user = c.get('user');
+    const user = c.get('user');``
     const db = c.env.expense_tracker_db;
     const geminiApiKey = c.env.GEMINI_API_KEY;
 
@@ -56,11 +55,13 @@ export const importStatementHandler = async (c) => {
     if (fileType === 'csv' || file.type === 'text/csv') {
       // CSV flow
       const csvText = await extractCsvText(file);
-      transactions = await parseWithGemini(csvText, geminiApiKey);
+      transactions = awaitparseWithOllama
+        (csvText, geminiApiKey);
     } else if (fileType === 'pdf' || file.type === 'application/pdf') {
       // PDF flow — Gemini ko directly PDF bhejo
       const { base64, mimeType } = await extractPdfBase64(file);
-      transactions = await parseWithGeminiPdf(base64, mimeType, geminiApiKey);
+      transactions = awaitparseWithOllama
+      Pdf(base64, mimeType, geminiApiKey);
     } else {
       return c.json({
         message: `"${fileType}" format support nahi hota. Sirf CSV ya PDF upload karo.`,

@@ -1,34 +1,20 @@
-/**
- * index.js (ai-chat backend route)
- * Route: POST /api/tracker/ai-chat
- * Body: { message, history }
- *
- * FIX: Ab frontend se transactions nahi aate.
- * D1 database se seedha 3 queries chalake exact data nikalta hai.
- *
- * Auth: authMiddleware se protected (tracker.routes.js)
- */
-
 import { handleChat } from './chat-handler.js';
 
 export const aiChatHandler = async (c) => {
   try {
-    const user        = c.get('user');
-    const db          = c.env.expense_tracker_db;
-    const geminiApiKey = c.env.GEMINI_API_KEY;
+    const user = c.get('user');
+    const db = c.env.expense_tracker_db;
 
-    if (!geminiApiKey) {
-      return c.json({ message: 'Gemini API key configure nahi hai', status: 500 }, 500);
-    }
+    // ❌ Gemini check hatao — ab zarurat nahi!
 
     const body = await c.req.json();
-    const { message, history = [] } = body;   // transactions ab frontend se NAHI aate
+    const { message, history = [] } = body;
 
     if (!message?.trim()) {
       return c.json({ message: 'Message empty nahi ho sakta', status: 400 }, 400);
     }
 
-    // ── Query 1: Is mahine ki transactions (D1 se) ───────────────────────────
+    // ── Query 1: Transactions from D1 ──
     const txnResult = await db.prepare(`
       SELECT t.id, t.type, t.amount, t.description, t.created_at,
              a.name AS account_name
@@ -42,12 +28,11 @@ export const aiChatHandler = async (c) => {
 
     const transactions = txnResult.results || [];
 
-    // ── Query 2: Account balances (all-time income - expense per account) ────
+    // ── Query 2: Account balances ──
     const allTxnResult = await db.prepare(`
       SELECT t.account_id, t.type, t.amount
-      FROM   TRANSACTIONS t
-      WHERE  t.user_id = ?
-        AND  t.is_hidden = 0
+      FROM TRANSACTIONS t
+      WHERE t.user_id = ? AND t.is_hidden = 0
     `).bind(user.id).all();
 
     const accountsResult = await db.prepare(
@@ -64,13 +49,8 @@ export const aiChatHandler = async (c) => {
       return { name: acc.name, balance: Math.round(balance) };
     });
 
-    // ── Query 3: Category-wise expense total (is mahine) ─────────────────────
-    // Note: category column may not exist — we group by description pattern in handler
-    // So we pass raw transactions and let chat-handler compute category totals
-    // (This is more reliable than relying on a category column that may be NULL)
-
-    // ── Call Gemini ──────────────────────────────────────────────────────────
-    const result = await handleChat(message, transactions, accounts, history, geminiApiKey);
+    // ── AI Engine call ──
+    const result = await handleChat(message, transactions, accounts, history);
 
     return c.json({ ...result, status: 200 }, 200);
 

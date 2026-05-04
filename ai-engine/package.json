@@ -1,0 +1,19 @@
+{
+  "name": "ai-engine",
+  "version": "1.0.0",
+  "description": "",
+  "main": "inddex.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@hono/node-server": "^2.0.1",
+    "chromadb": "^3.4.3",
+    "hono": "^4.12.16"
+  }
+}
