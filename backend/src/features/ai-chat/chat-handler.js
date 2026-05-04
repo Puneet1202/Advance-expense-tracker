@@ -1,17 +1,10 @@
 /**
  * chat-handler.js (backend)
- * D1 se aaya exact data Gemini ko bhejta hai.
- * System prompt mein 100% accurate numbers inject hote hain.
- *
- * FIX: Frontend se aane wala incomplete data ab use nahi hota.
- *      index.js ne D1 se data fetch kiya — yahan sirf format + Gemini call.
+ * Pre-calculates all financial numbers in JavaScript.
+ * Generates an English-only strict system prompt.
  */
-
-// const GEMINI_URL =http://localhost:4000
-
 const AI_ENGINE_URL = 'http://localhost:4000'
 
-// Description se category guess karna
 function guessCategory(desc = '') {
   const d = desc.toLowerCase();
   if (/salary|stipend|payroll/.test(d)) return 'Salary';
@@ -26,125 +19,104 @@ function guessCategory(desc = '') {
 }
 
 function buildSystemPrompt(transactions, accounts) {
-  // ── Account Balances ──────────────────────────────────────────────────────
-  const accountLines = accounts.length
-    ? accounts.map(a => `  ${a.name}: ₹${a.balance.toLocaleString('en-IN')}`).join('\n')
-    : '  Koi account nahi';
-
-  const accountNames = accounts.map(a => a.name).join(', ') || 'N/A';
-
-  // ── Category-wise totals (compute from raw D1 rows) ───────────────────────
-  const catMap = {};
+  // Pre-calculate ALL numbers in JavaScript
   let totalIncome = 0;
   let totalExpense = 0;
+  const categoryTotals = {};
 
   transactions.forEach(t => {
     const cat = guessCategory(t.description);
     if (t.type === 'expense') {
-      catMap[cat] = (catMap[cat] || 0) + t.amount;
       totalExpense += t.amount;
+      categoryTotals[cat] = (categoryTotals[cat] || 0) + t.amount;
     } else if (t.type === 'income') {
       totalIncome += t.amount;
     }
   });
 
-  const categoryLines = Object.entries(catMap)
+  const net = totalIncome - totalExpense;
+
+  const categoryLines = Object.entries(categoryTotals)
     .sort((a, b) => b[1] - a[1])
-    .map(([cat, amt]) => `  ${cat}: ₹${Math.round(amt).toLocaleString('en-IN')}`)
-    .join('\n') || '  Koi expense nahi';
+    .map(([cat, amt]) => `- ${cat}: ₹${amt}`)
+    .join('\n') || '- No expenses yet';
 
-  // ── Transaction list (last 50, dated rows) ────────────────────────────────
-  const txnLines = transactions.slice(0, 50).map(t => {
-    const date = (t.created_at || '').substring(0, 10);
-    const cat = guessCategory(t.description);
-    const sign = t.type === 'income' ? '+' : '-';
-    return `  ${date} | ${sign}₹${t.amount} | ${cat} | ${t.description || 'N/A'} | ${t.account_name || 'N/A'}`;
-  }).join('\n') || '  Koi transaction nahi is mahine';
+  const accountLines = accounts.length
+    ? accounts.map(a => `- ${a.name}: ₹${a.balance}`).join('\n')
+    : '- No accounts configured';
 
-  return `Tu Suraj ka personal finance assistant hai. Hindi/Hinglish mein baat kar. Friendly reh.
+  const accountNames = accounts.map(a => a.name).join(', ') || 'N/A';
 
-User ka EXACT financial data D1 database se hai — 100% accurate. Sirf yahi use karo, koi assumption mat lao.
+  return `You are a specialized expense tracker assistant.
+Your ONLY source of truth is the exact data provided below and the specific transactions retrieved from the database.
 
-═══ ACCOUNTS (current balance) ═══
-${accountLines}
+=== PRE-CALCULATED FINANCIAL DATA ===
+Total Income: ₹${totalIncome}
+Total Expense: ₹${totalExpense}
+Net Balance: ₹${net}
 
-═══ IS MAHINE TRANSACTIONS (${transactions.length} total) ═══
-Format: date | amount | category | description | account
-${txnLines}
-
-═══ IS MAHINE CATEGORY-WISE EXPENSE ═══
+=== CATEGORY WISE EXPENSES ===
 ${categoryLines}
 
-  Kul Income:   ₹${Math.round(totalIncome).toLocaleString('en-IN')}
-  Kul Expense:  ₹${Math.round(totalExpense).toLocaleString('en-IN')}
-  Net:          ₹${Math.round(totalIncome - totalExpense).toLocaleString('en-IN')}
+=== ACCOUNT BALANCES ===
+${accountLines}
 
-═══ RULES ═══
-1. SIRF upar diya data use karo — koi assume mat karo
-2. "Kul Expense" EXACTLY ₹${Math.round(totalExpense).toLocaleString('en-IN')} hai — YAHI BOLNA HAI!
-3. "Kul Income" EXACTLY ₹${Math.round(totalIncome).toLocaleString('en-IN')} hai — YAHI BOLNA HAI!
-4. KABHI khud calculate mat karna — upar diye numbers FINAL hain!
-5. Category sum ke liye: upar ki list se filter karo, phir add karo
-6. Hindi/Hinglish mein jawab do — 2-4 lines max
-7. Food, Bills, Rent, Transport ZARURI hain — kabhi "faltu" mat bolna
-   Sirf Shopping, Entertainment, Subscriptions faltu hote hain
-8. Agar user transaction add karna chahta ho to SIRF yeh JSON do (koi extra text nahi):
-{"action":"ADD_TRANSACTION","data":{"description":"item","amount":500,"type":"expense","account_name":"${accounts[0]?.name || 'SBI'}","category":"Food"}}
-9. account_name EXACTLY in mein se hona chahiye: ${accountNames}`;
+=== STRICT RULES ===
+1. Just report these exact numbers, NEVER calculate. Do NOT make up any numbers.
+2. Answer STRICTLY in Hinglish (Roman Hindi). You MUST use ONLY English alphabets (A-Z).
+3. Do NOT use Devanagari or Punjabi scripts.
+4. Keep the answer extremely short (1-2 lines maximum).
+5. If the user asks to add a transaction, reply ONLY with this exact JSON format and no other text:
+{"action":"ADD_TRANSACTION","data":{"description":"item","amount":500,"type":"expense","account_name":"${accounts[0]?.name || 'Bank'}","category":"Food"}}
+6. Valid account names for JSON: ${accountNames}
+
+Example of a good response:
+User: mera balance kya hai?
+AI: Aapka net balance ₹${net} hai.`;
 }
 
-/**
- * @param {string} message
- * @param {Array}  transactions — D1 se fetched [{type, amount, description, created_at, account_name}]
- * @param {Array}  accounts     — [{name, balance}]
- * @param {Array}  history      — [{role, content}]
- * @param {string} apiKey
- * @returns {Promise<{reply: string|null, action: object|null}>}
- */
-// export async function handleChat(message, transactions, accounts, history, apiKey) {
-export async function handleChat(message, transactions, accounts, history) {
-
+export async function handleChat(message, transactions, accounts, history, userId) {
   const systemPrompt = buildSystemPrompt(transactions, accounts);
 
-  const contents = [
-    { role: 'user', parts: [{ text: systemPrompt }] },
-    { role: 'model', parts: [{ text: 'Samajh gaya! Main D1 database ka exact data dekh sakta hoon. Kya help chahiye?' }] },
-    ...history.slice(-8).map(h => ({
-      role: h.role === 'user' ? 'user' : 'model',
-      parts: [{ text: h.content }]
-    })),
-    { role: 'user', parts: [{ text: message }] }
-  ];
+  // Format history: drop long hallucinated assistant messages from before the fix
+  const normalizedHistory = (history || [])
+    .filter(h => h.role === 'user' || (h.role === 'assistant' && h.content && h.content.length < 150))
+    .slice(-4).map(h => ({
+      role: h.role === 'user' ? 'user' : 'assistant',
+      content: h.content || ''
+    }));
 
+  // Send everything to AI Engine (including ALL transactions for ChromaDB RAG indexing)
   const res = await fetch(`${AI_ENGINE_URL}/api/chat`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    question: message,
-    transactions,
-    systemPrompt,
-    history
-  })
-});
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      question: message,
+      systemPrompt,
+      history: normalizedHistory,
+      userId: userId,
+      transactions: transactions
+    })
+  });
 
-if (!res.ok) {
-  const err = await res.text();
-  throw new Error(`AI Engine error ${res.status}: ${err.substring(0, 120)}`);
-}
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`AI Engine error ${res.status}: ${err.substring(0, 120)}`);
+  }
 
-const data = await res.json();
-const rawText = data?.answer?.trim()
-  || 'Kuch samajh nahi aaya, dobara puchho.';
+  const data = await res.json();
+  const rawText = data?.answer?.trim() || 'Kuch samajh nahi aaya.';
 
   let action = null;
   let reply = rawText;
 
+  // Check if AI responded with the action JSON
   const jsonMatch = rawText.match(/\{[\s\S]*?"action"\s*:\s*"ADD_TRANSACTION"[\s\S]*?\}/);
   if (jsonMatch) {
     try {
       action = JSON.parse(jsonMatch[0]);
       reply = null;
-    } catch (e) { /* normal text */ }
+    } catch (e) { /* ignore */ }
   }
 
   return { reply, action };

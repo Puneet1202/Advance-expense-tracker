@@ -5,8 +5,6 @@ export const aiChatHandler = async (c) => {
     const user = c.get('user');
     const db = c.env.expense_tracker_db;
 
-    // ❌ Gemini check hatao — ab zarurat nahi!
-
     const body = await c.req.json();
     const { message, history = [] } = body;
 
@@ -14,7 +12,7 @@ export const aiChatHandler = async (c) => {
       return c.json({ message: 'Message empty nahi ho sakta', status: 400 }, 400);
     }
 
-    // ── Query 1: Transactions from D1 ──
+    // Fetch ALL transactions from D1 for current user (No month filter)
     const txnResult = await db.prepare(`
       SELECT t.id, t.type, t.amount, t.description, t.created_at,
              a.name AS account_name
@@ -22,13 +20,12 @@ export const aiChatHandler = async (c) => {
       LEFT JOIN ACCOUNTS a ON t.account_id = a.id
       WHERE  t.user_id = ?
         AND  t.is_hidden = 0
-        AND  strftime('%Y-%m', t.created_at) = strftime('%Y-%m', 'now')
       ORDER BY t.created_at DESC
     `).bind(user.id).all();
 
     const transactions = txnResult.results || [];
 
-    // ── Query 2: Account balances ──
+    // Account balances
     const allTxnResult = await db.prepare(`
       SELECT t.account_id, t.type, t.amount
       FROM TRANSACTIONS t
@@ -43,14 +40,14 @@ export const aiChatHandler = async (c) => {
       let balance = 0;
       (allTxnResult.results || []).forEach(t => {
         if (t.account_id === acc.id) {
-          balance += t.type === 'income' ? t.amount : -t.amount;
+           balance += t.type === 'income' ? t.amount : -t.amount;
         }
       });
       return { name: acc.name, balance: Math.round(balance) };
     });
 
-    // ── AI Engine call ──
-    const result = await handleChat(message, transactions, accounts, history);
+    // Pass everything to chat handler (including userId for ChromaDB)
+    const result = await handleChat(message, transactions, accounts, history, user.id);
 
     return c.json({ ...result, status: 200 }, 200);
 
