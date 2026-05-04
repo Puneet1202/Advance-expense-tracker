@@ -1,5 +1,5 @@
 name = "expense-tracker"
-main = "src/app.js"
+main = "backend/src/app.js"
 compatibility_date = "2026-04-28"
 
 [[d1_databases]]

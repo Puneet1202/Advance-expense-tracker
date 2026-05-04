@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { fmt } from '../../utils/formatCurrency';
 import { guessCategory, CATEGORY_CONFIG } from './CategoryChart';
+import { createPortal } from 'react-dom';
 
 // ─── Currency Config ─────────────────────────────────────────────────────────
 const CACHE_KEY = 'currency_cache';
@@ -115,6 +116,9 @@ export default function TransactionArea({
   const [converting, setConverting] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
+
+  const [deleteModal, setDeleteModal] = useState({ open: false, id: null });
+
   const VISIBLE_COUNT = 6;
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -154,16 +158,50 @@ export default function TransactionArea({
   };
 
   // ── Delete Transaction ───────────────────────────────────────────────────
-  const delTxn = async (id) => {
-    if (!window.confirm('Remove this transaction?')) return;
-    await api.delete(`/tracker/transaction/${id}`);
-    fetchTrackerData();
-  };
+ const delTxn = async (id) => {
+  setDeleteModal({ open: true, id });
+};
+
+const confirmDelete = async () => {
+  await api.delete(`/tracker/transaction/${deleteModal.id}`);
+  fetchTrackerData();
+  setDeleteModal({ open: false, id: null });
+};
 
   const filtered = transactions.filter(t => !selectedAccountId || t.account_id === selectedAccountId);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+    {deleteModal.open && createPortal(
+  <div style={{
+    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+    background: 'rgba(0,0,0,0.5)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 99999
+  }}>
+    <div style={{
+      background: 'var(--bg-card)', borderRadius: '12px',
+      padding: '24px', minWidth: '280px', textAlign: 'center'
+    }}>
+      <p style={{ marginBottom: '16px', fontWeight: 600 }}>Remove this transaction?</p>
+      <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+        <button onClick={confirmDelete} style={{
+          background: 'var(--red)', color: '#fff',
+          border: 'none', borderRadius: '8px', padding: '8px 20px', cursor: 'pointer'
+        }}>OK</button>
+        <button onClick={() => setDeleteModal({ open: false, id: null })} style={{
+          background: 'var(--bg-2)', border: 'none',
+          borderRadius: '8px', padding: '8px 20px', cursor: 'pointer'
+        }}>Cancel</button>
+      </div>
+    </div>
+  </div>,
+  document.body
+)}
+
+
+
 
       {/* ── Budget Bar ── */}
       {is_saving_mode && expense_limit > 0 && (
