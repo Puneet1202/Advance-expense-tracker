@@ -23,7 +23,7 @@ export async function searchRelevantTransactions(userId, question, transactions 
     // If no meaningful keywords, return the most recent 10 transactions
     if (tokens.length === 0) {
       return transactions.slice(0, k).map(t => 
-        `Date: ${(t.created_at||'').substring(0, 10)} | Type: ${t.type} | Amount: ₹${t.amount} | Desc: ${t.description} | Acc: ${t.account_name || 'N/A'}`
+        `ID: ${t.id} | Date: ${(t.created_at||'').substring(0, 10)} | Type: ${t.type} | Amount: ₹${t.amount} | Desc: ${t.description} | Acc: ${t.account_name || 'N/A'}`
       );
     }
 
@@ -58,7 +58,7 @@ export async function searchRelevantTransactions(userId, question, transactions 
 
     return topK.map(s => {
       const t = s.transaction;
-      return `Date: ${(t.created_at||'').substring(0, 10)} | Type: ${t.type} | Amount: ₹${t.amount} | Desc: ${t.description} | Acc: ${t.account_name || 'N/A'}`;
+      return `ID: ${t.id} | Date: ${(t.created_at||'').substring(0, 10)} | Type: ${t.type} | Amount: ₹${t.amount} | Desc: ${t.description} | Acc: ${t.account_name || 'N/A'}`;
     });
 
   } catch (error) {

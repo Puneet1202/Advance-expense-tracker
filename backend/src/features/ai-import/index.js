@@ -69,11 +69,11 @@ export const importStatementHandler = async (c) => {
 
     // Existing transactions fetch karo duplicate check ke liye
     const existingTxns = await db.prepare(
-      'SELECT amount, created_at FROM TRANSACTIONS WHERE user_id = ? AND account_id = ?'
+      'SELECT amount, created_at, description, type FROM TRANSACTIONS WHERE user_id = ? AND account_id = ?'
     ).bind(user.id, Number(account_id)).all()
 
     const existingSet = new Set(
-      existingTxns.results.map(t => `${t.amount}|${(t.created_at || '').substring(0, 10)}`)
+      existingTxns.results.map(t => `${t.amount}|${(t.created_at || '').substring(0, 10)}|${(t.description || '').toLowerCase().trim()}|${t.type}`)
     )
 
     let imported = 0
@@ -97,12 +97,12 @@ export const importStatementHandler = async (c) => {
           isoDate = null
         }
         if (!isoDate) isoDate = new Date().toISOString().substring(0, 10)
-
-        // Duplicate check: same amount + same date
-        const dedupKey = `${amount}|${isoDate}`
-        if (existingSet.has(dedupKey)) { skipped++; continue }
-
+        
         const description = (txn.description || 'Imported Transaction').substring(0, 200)
+
+        // Duplicate check: same amount + same date + same description + same type
+        const dedupKey = `${amount}|${isoDate}|${description.toLowerCase().trim()}|${type}`
+        if (existingSet.has(dedupKey)) { skipped++; continue }
 
         await db.prepare(
           'INSERT INTO TRANSACTIONS (user_id, type, amount, description, account_id, created_at) VALUES (?, ?, ?, ?, ?, ?)'

@@ -6,7 +6,7 @@ export const aiChatHandler = async (c) => {
     const db = c.env.expense_tracker_db;
 
     const body = await c.req.json();
-    const { message, history = [] } = body;
+    const { message, history = [], usdRate = 83 } = body;
 
     if (!message?.trim()) {
       return c.json({ message: 'Message empty nahi ho sakta', status: 400 }, 400);
@@ -47,7 +47,7 @@ export const aiChatHandler = async (c) => {
     });
 
     // Pass everything to chat handler (including userId for ChromaDB)
-    const result = await handleChat(message, transactions, accounts, history, user.id);
+    const result = await handleChat(message, transactions, accounts, history, user.id, usdRate);
 
     return c.json({ ...result, status: 200 }, 200);
 

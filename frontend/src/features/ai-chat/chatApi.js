@@ -18,10 +18,21 @@ import api from '../../api/axios';
  * @returns {Promise<{reply: string|null, action: object|null}>}
  */
 export async function sendChatMessage(message, _transactions, _balances, history) {
+  let usdRate = 83; // fallback
+  try {
+    const cached = localStorage.getItem('currency_cache');
+    if (cached) {
+      const json = JSON.parse(cached);
+      if (json.data && json.data.USD) {
+        usdRate = (1 / json.data.USD).toFixed(2);
+      }
+    }
+  } catch (e) { /* ignore */ }
+
   const res = await api.post('/tracker/ai-chat', {
     message,
     history: history.slice(-8),
-    // transactions aur balances ab backend D1 se fetch karta hai
+    usdRate
   }, {
     timeout: 300000,
   });

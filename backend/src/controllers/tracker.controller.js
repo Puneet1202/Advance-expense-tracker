@@ -263,3 +263,23 @@ export const getTrackerData = async (c) => {
             return c.json({ message: "internal server error", error: error.message, status: 500 }, 500);
         }
     };
+
+    export const undoLastTransaction = async (c) => {
+        try {
+            const user = c.get('user');
+            const db = c.env.expense_tracker_db;
+            
+            // Find the most recently inserted transaction
+            const lastTxn = await db.prepare("SELECT id, description, amount FROM TRANSACTIONS WHERE user_id = ? ORDER BY id DESC LIMIT 1").bind(user.id).first();
+            
+            if (lastTxn) {
+                await db.prepare("DELETE FROM TRANSACTIONS WHERE id = ? AND user_id = ?").bind(lastTxn.id, user.id).run();
+                return c.json({ message: `Undo successful: Removed '${lastTxn.description}' (₹${lastTxn.amount})`, status: 200 }, 200);
+            }
+            
+            return c.json({ message: "Koi recent action nahi mila jise undo kiya ja sake.", status: 400 }, 400);
+        } catch (error) {
+            console.error("Undo error:", error);
+            return c.json({ message: "internal server error", error: error.message, status: 500 }, 500);
+        }
+    };

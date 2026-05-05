@@ -18,7 +18,7 @@ function guessCategory(desc = '') {
   return 'Other';
 }
 
-function buildSystemPrompt(transactions, accounts) {
+function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHint) {
   // Pre-calculate ALL numbers in JavaScript
   let totalIncome = 0;
   let totalExpense = 0;
@@ -50,10 +50,15 @@ function buildSystemPrompt(transactions, accounts) {
   return `You are a specialized expense tracker assistant.
 Your ONLY source of truth is the exact data provided below and the specific transactions retrieved from the database.
 
+=== MATH & ACCOUNT FACTS ===
+${accountHint || "No account auto-detected. Check history or ask."}
+${mathHint || "No foreign currency auto-detected."}
+
 === PRE-CALCULATED FINANCIAL DATA ===
 Total Income: ₹${totalIncome}
 Total Expense: ₹${totalExpense}
 Net Balance: ₹${net}
+Live USD Exchange Rate: $1 USD = ₹${usdRate} INR
 
 === CATEGORY WISE EXPENSES ===
 ${categoryLines}
@@ -66,21 +71,64 @@ ${accountLines}
 2. Answer STRICTLY in Hinglish (Roman Hindi). Use ONLY English alphabets.
 3. Keep the answer extremely short (1-2 lines).
 
-=== ADDING TRANSACTIONS LOGIC ===
-If the user asks to add an expense, you MUST do these validations BEFORE generating JSON:
-Step 1: Check if the user specified an account name from the valid list: ${accountNames}. If NO account is mentioned, you MUST ask: "Aapne kis account se pay kiya? (${accountNames})". Do NOT output JSON.
-Step 2: If the account is known, check its balance in the ACCOUNT BALANCES section. If the expense is GREATER than the account balance, you MUST REJECT it and ask: "Aapke [Account] mein sirf ₹[Balance] hain, par expense ₹[Amount] ka hai. Aap kisi aur account se pay karna chahenge?". Do NOT output JSON and do NOT ask for confirmation.
-Step 3: You MUST determine the most logical category from this strict list: [Food, Shopping, Bills, Fuel, Transport, Salary, Transfer, Entertainment, Other]. For example, "movie" is Entertainment, "pizza" is Food.
-Step 4: ONLY if the account has enough balance, then reply ONLY with this exact JSON format and absolutely no other text:
-{"action":"ADD_TRANSACTION","data":{"description":"item name","amount":500,"type":"expense","account_name":"actual_account_name","category":"actual_category_from_list"}}
+=== APP ACTIONS LOGIC ===
+[Action: Add Transaction]
+If user asks to add an expense, you MUST do these validations BEFORE generating JSON:
+Step 1: Check the MATH & ACCOUNT FACTS. If an account is listed there, USE IT and do NOT ask for it. If not, and NO account is mentioned in chat history either, then ask: "Aapne kis account se pay kiya?". Do NOT output JSON.
+Step 2: Check the MATH FACT. If an exact INR amount is provided there, you MUST use that EXACT number.
+Step 3: You MUST determine the most logical category from this strict list: [Food, Shopping, Bills, Fuel, Transport, Salary, Transfer, Entertainment, Other]. For example, "movie" or "netflix" is Entertainment.
+Step 4: You MUST auto-correct any spelling mistakes in the user's description. If they say "subcription" or "netflx", fix it to "Netflix Subscription".
+Step 5: Reply ONLY with this exact JSON format. The "amount" MUST be a pure number in INR (e.g., 4565), NO currency symbols:
+{"action":"ADD_TRANSACTION","data":{"description":"Netflix Subscription","amount":4565,"type":"expense","account_name":"actual_account_name","category":"actual_category_from_list"}}
+
+[Action: Delete Transaction]
+If the user asks to delete a specific transaction (e.g., "Delete dominos", "Movie wala kharcha hata do"):
+Step 1: Search the "RELEVANT SEARCHED TRANSACTIONS" context provided to you for the matching transaction to find its exact ID.
+Step 2: Reply ONLY with this exact JSON format and absolutely no other text:
+{"action":"DELETE_TRANSACTION","data":{"id":123,"description":"short name of what was deleted"}}
+
+[Action: Toggle Saving Mode]
+If the user asks to turn on/off saving mode or set a budget limit (e.g., "Saving mode chalu karo 5000 limit ke sath", "Budget band kar do"):
+Step 1: Reply ONLY with this exact JSON format and absolutely no other text:
+{"action":"TOGGLE_SAVING_MODE","data":{"status":true,"limit":5000}}
+
+[Action: Undo Last Action]
+If the user says they made a mistake and wants to revert/undo the last change (e.g., "Undo kar do", "Galti ho gayi wapas theek karo", "Pehle jaisa kar do"):
+Step 1: Reply ONLY with this exact JSON format and absolutely no other text:
+{"action":"UNDO_LAST_ACTION","data":{}}
+
+[Action: Change Currency]
+If the user asks to check currency rates or change the active currency (e.g., "Dollar ka rate dikhao", "Euro mein change karo"):
+Step 1: Pick the valid currency code (USD, EUR, GBP, AED, SAR, JPY, CAD, AUD, SGD, CHF, INR).
+Step 2: Reply ONLY with this exact JSON format and absolutely no other text:
+{"action":"CHANGE_CURRENCY","data":{"currency":"USD"}}
 
 Example of a normal reply:
 User: mera balance kya hai?
 AI: Aapka net balance ₹${net} hai.`;
 }
 
-export async function handleChat(message, transactions, accounts, history, userId) {
-  const systemPrompt = buildSystemPrompt(transactions, accounts);
+export async function handleChat(message, transactions, accounts, history, userId, usdRate = 83) {
+  // Pre-calculate USD conversions in JS to help LLM
+  let mathHint = "";
+  const match = message.match(/(\d+(?:\.\d+)?)\s*(?:usd|\$)/i) || message.match(/\$\s*(\d+(?:\.\d+)?)/i);
+  if (match) {
+    const usdAmount = parseFloat(match[1]);
+    const inrAmount = Math.round(usdAmount * usdRate);
+    mathHint = `MATH FACT: The user mentioned $${usdAmount} USD. At the live rate of ${usdRate}, this is EXACTLY ₹${inrAmount} INR. You MUST use exactly ${inrAmount} as the amount in your JSON!`;
+  }
+  
+  // Pre-extract account to help LLM
+  let accountHint = "";
+  const lowerMessage = message.toLowerCase();
+  for (const acc of accounts) {
+    if (lowerMessage.includes(acc.name.toLowerCase())) {
+      accountHint = `ACCOUNT FACT: The user explicitly mentioned the account "${acc.name}". Do NOT ask them for the account again! Use "${acc.name}" in your JSON.`;
+      break;
+    }
+  }
+
+  const systemPrompt = buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHint);
 
   // Format history: keep more messages so AI doesn't forget context during long workflows
   const normalizedHistory = (history || [])
@@ -114,8 +162,8 @@ export async function handleChat(message, transactions, accounts, history, userI
   let action = null;
   let reply = rawText;
 
-  // Check if AI responded with the action JSON (greedy match for full object)
-  const jsonMatch = rawText.match(/\{[\s\S]*"action"\s*:\s*"ADD_TRANSACTION"[\s\S]*\}/);
+  // Check if AI responded with any action JSON (greedy match for full object)
+  const jsonMatch = rawText.match(/\{[\s\S]*"action"\s*:\s*"[A-Z_]+"[\s\S]*\}/);
   if (jsonMatch) {
     try {
       action = JSON.parse(jsonMatch[0]);

@@ -57,9 +57,51 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
     });
   }, []);
 
-  // ADD_TRANSACTION action handle karna
+  // Action handle karna (ADD / DELETE)
   const executeAction = useCallback(async (action) => {
     try {
+      if (action.action === 'DELETE_TRANSACTION') {
+        const { id, description } = action.data;
+        if (!id) {
+          addMsg('assistant', '⚠️ Main transaction dhoondh nahi paaya. Kripya thoda specific bataiye.');
+          return;
+        }
+
+        await api.delete(`/tracker/transaction/${id}`);
+
+        addMsg('assistant', `✅ Transaction delete ho gaya!\n**${description}**`, true);
+        setActionStatus({ type: 'success', text: `✅ Deleted: ${description}` });
+        setTimeout(() => setActionStatus(null), 3000);
+        fetchTrackerData?.();
+        return;
+      }
+
+      if (action.action === 'TOGGLE_SAVING_MODE') {
+        const { status, limit } = action.data;
+        await api.post('/tracker/settings', { is_saving_mode: status, expense_limit: Number(limit) || 0 });
+        addMsg('assistant', `✅ Saving mode ${status ? 'ON' : 'OFF'} ho gaya!${limit ? ` Budget: ₹${limit}` : ''}`, true);
+        setActionStatus({ type: 'success', text: `Saving Mode ${status ? 'ON' : 'OFF'}` });
+        setTimeout(() => setActionStatus(null), 3000);
+        fetchTrackerData?.();
+        return;
+      }
+
+      if (action.action === 'CHANGE_CURRENCY') {
+        window.dispatchEvent(new CustomEvent('ai_change_currency', { detail: action.data.currency }));
+        addMsg('assistant', `✅ Currency badal di gayi hai: ${action.data.currency}`, true);
+        return;
+      }
+
+      if (action.action === 'UNDO_LAST_ACTION') {
+        await api.post('/tracker/undo');
+        addMsg('assistant', `✅ Last action Undo kar diya gaya hai! App pehle jaisi ho gayi hai.`, true);
+        setActionStatus({ type: 'success', text: 'Undo Successful' });
+        setTimeout(() => setActionStatus(null), 3000);
+        fetchTrackerData?.();
+        return;
+      }
+
+      // ADD_TRANSACTION logic
       const { description, amount, type, account_name } = action.data;
 
       const account = accounts.find(a =>
@@ -90,7 +132,7 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
 
       fetchTrackerData?.();
     } catch (err) {
-      addMsg('assistant', `❌ Transaction add nahi ho saka: ${err.response?.data?.message || err.message}`);
+      addMsg('assistant', `❌ Action fail ho gaya: ${err.response?.data?.message || err.message}`);
     }
   }, [accounts, fetchTrackerData, addMsg]);
 
@@ -111,7 +153,7 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
 
       const { reply, action } = await sendChatMessage(msg, transactions, balances, history);
 
-      if (action?.action === 'ADD_TRANSACTION') {
+      if (action) {
         await executeAction(action);
       } else if (reply) {
         addMsg('assistant', reply);

@@ -14,6 +14,7 @@ export const CATEGORY_CONFIG = {
   Transport: { emoji: '🚗', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.3)', label: 'Transport' },
   Salary:    { emoji: '💰', color: '#22c55e', bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.3)',  label: 'Salary'    },
   Transfer:  { emoji: '🔄', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.3)', label: 'Transfer'  },
+  Entertainment: { emoji: '🎬', color: '#ec4899', bg: 'rgba(236,72,153,0.12)', border: 'rgba(236,72,153,0.3)', label: 'Entertainment' },
   Other:     { emoji: '📦', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.3)', label: 'Other'     },
 };
 
@@ -27,10 +28,11 @@ export function guessCategory(t) {
 
   if (/salary|stipend|payroll/.test(desc)) return 'Salary';
   if (/swiggy|zomato|restaurant|food|cafe|hotel|eat|meal|biryani|pizza|burger|blinkit|grocery/.test(desc)) return 'Food';
-  if (/amazon|flipkart|myntra|shopping|mall|mart|store|shop/.test(desc)) return 'Shopping';
+  if (/amazon|flipkart|myntra|meesho|shopping|mall|mart|store|shop/.test(desc)) return 'Shopping';
   if (/petrol|diesel|fuel|hp|bpcl|iocl|shell|indian oil/.test(desc)) return 'Fuel';
-  if (/uber|ola|metro|bus|train|cab|auto|rapido|transport/.test(desc)) return 'Transport';
+  if (/uber|ola|metro|bus|train|cab|auto|rapido|transport|travel|flight|ticket/.test(desc)) return 'Transport';
   if (/electricity|water|gas|dth|broadband|internet|bill|recharge|jio|airtel/.test(desc)) return 'Bills';
+  if (/netflix|spotify|prime|hotstar|subscription|movie|cinema/.test(desc)) return 'Entertainment';
   if (/transfer|neft|imps|rtgs|upi|sent|received/.test(desc)) return 'Transfer';
 
   // income type ko Salary/Other mein rakhte hain

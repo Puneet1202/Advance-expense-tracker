@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { authMiddleware } from "../middlewares/auth.middleware";
-import { getTrackerData, updateSettings, addTransaction, deleteTransaction, addAccount, deleteAccount, resetAllData } from "../controllers/tracker.controller";
+import { getTrackerData, updateSettings, addTransaction, deleteTransaction, addAccount, deleteAccount, resetAllData, undoLastTransaction } from "../controllers/tracker.controller";
 import { importStatementHandler, adjustBalanceHandler } from "../features/ai-import/index.js";
 import { aiChatHandler } from "../features/ai-chat/index.js";
 
@@ -14,6 +14,8 @@ router.post('/settings', updateSettings);
 
 router.post('/transaction', addTransaction);
 router.delete('/transaction/:id', deleteTransaction);
+
+router.post('/undo', undoLastTransaction);
 
 router.delete('/reset', resetAllData);
 

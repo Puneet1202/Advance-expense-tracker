@@ -56,6 +56,14 @@ const CurrencyWidget = () => {
 
   useEffect(() => {
     fetchRates();
+
+    const handleAiChange = (e) => {
+      if (CURRENCIES.find(c => c.code === e.detail)) {
+        setSelectedCurrency(e.detail);
+      }
+    };
+    window.addEventListener('ai_change_currency', handleAiChange);
+    return () => window.removeEventListener('ai_change_currency', handleAiChange);
   }, []);
 
   const handleRefresh = () => {
