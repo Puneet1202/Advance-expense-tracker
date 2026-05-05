@@ -26,7 +26,7 @@ export function guessCategory(t) {
   const desc = (t.description || '').toLowerCase();
 
   if (/salary|stipend|payroll/.test(desc)) return 'Salary';
-  if (/swiggy|zomato|restaurant|food|cafe|hotel|eat|meal|biryani|pizza|burger/.test(desc)) return 'Food';
+  if (/swiggy|zomato|restaurant|food|cafe|hotel|eat|meal|biryani|pizza|burger|blinkit|grocery/.test(desc)) return 'Food';
   if (/amazon|flipkart|myntra|shopping|mall|mart|store|shop/.test(desc)) return 'Shopping';
   if (/petrol|diesel|fuel|hp|bpcl|iocl|shell|indian oil/.test(desc)) return 'Fuel';
   if (/uber|ola|metro|bus|train|cab|auto|rapido|transport/.test(desc)) return 'Transport';

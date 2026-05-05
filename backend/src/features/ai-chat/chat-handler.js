@@ -8,13 +8,13 @@ const AI_ENGINE_URL = 'http://localhost:4000'
 function guessCategory(desc = '') {
   const d = desc.toLowerCase();
   if (/salary|stipend|payroll/.test(d)) return 'Salary';
-  if (/swiggy|zomato|food|restaurant|cafe|eat|biryani|pizza|burger/.test(d)) return 'Food';
-  if (/amazon|flipkart|myntra|meesho|shopping|mall|mart/.test(d)) return 'Shopping';
-  if (/petrol|diesel|fuel|bpcl|hp|iocl|shell/.test(d)) return 'Fuel';
-  if (/uber|ola|metro|bus|cab|auto|rapido|train/.test(d)) return 'Transport';
+  if (/swiggy|zomato|restaurant|food|cafe|hotel|eat|meal|biryani|pizza|burger|blinkit|grocery/.test(d)) return 'Food';
+  if (/amazon|flipkart|myntra|meesho|shopping|mall|mart|store|shop/.test(d)) return 'Shopping';
+  if (/petrol|diesel|fuel|hp|bpcl|iocl|shell|indian oil/.test(d)) return 'Fuel';
+  if (/uber|ola|metro|bus|train|cab|auto|rapido|transport/.test(d)) return 'Transport';
   if (/electricity|water|gas|dth|broadband|internet|bill|recharge|jio|airtel/.test(d)) return 'Bills';
   if (/netflix|spotify|prime|hotstar|subscription/.test(d)) return 'Entertainment';
-  if (/transfer|neft|imps|rtgs/.test(d)) return 'Transfer';
+  if (/transfer|neft|imps|rtgs|upi|sent|received/.test(d)) return 'Transfer';
   return 'Other';
 }
 
@@ -62,15 +62,19 @@ ${categoryLines}
 ${accountLines}
 
 === STRICT RULES ===
-1. Just report these exact numbers, NEVER calculate. Do NOT make up any numbers.
-2. Answer STRICTLY in Hinglish (Roman Hindi). You MUST use ONLY English alphabets (A-Z).
-3. Do NOT use Devanagari or Punjabi scripts.
-4. Keep the answer extremely short (1-2 lines maximum).
-5. If the user asks to add a transaction, reply ONLY with this exact JSON format and no other text:
-{"action":"ADD_TRANSACTION","data":{"description":"item","amount":500,"type":"expense","account_name":"${accounts[0]?.name || 'Bank'}","category":"Food"}}
-6. Valid account names for JSON: ${accountNames}
+1. Just report exact numbers, NEVER calculate. Do NOT make up numbers.
+2. Answer STRICTLY in Hinglish (Roman Hindi). Use ONLY English alphabets.
+3. Keep the answer extremely short (1-2 lines).
 
-Example of a good response:
+=== ADDING TRANSACTIONS LOGIC ===
+If the user asks to add an expense, you MUST do these validations BEFORE generating JSON:
+Step 1: Check if the user specified an account name from the valid list: ${accountNames}. If NO account is mentioned, you MUST ask: "Aapne kis account se pay kiya? (${accountNames})". Do NOT output JSON.
+Step 2: If the account is known, check its balance in the ACCOUNT BALANCES section. If the expense is GREATER than the account balance, you MUST REJECT it and ask: "Aapke [Account] mein sirf ₹[Balance] hain, par expense ₹[Amount] ka hai. Aap kisi aur account se pay karna chahenge?". Do NOT output JSON and do NOT ask for confirmation.
+Step 3: You MUST determine the most logical category from this strict list: [Food, Shopping, Bills, Fuel, Transport, Salary, Transfer, Entertainment, Other]. For example, "movie" is Entertainment, "pizza" is Food.
+Step 4: ONLY if the account has enough balance, then reply ONLY with this exact JSON format and absolutely no other text:
+{"action":"ADD_TRANSACTION","data":{"description":"item name","amount":500,"type":"expense","account_name":"actual_account_name","category":"actual_category_from_list"}}
+
+Example of a normal reply:
 User: mera balance kya hai?
 AI: Aapka net balance ₹${net} hai.`;
 }
@@ -78,10 +82,10 @@ AI: Aapka net balance ₹${net} hai.`;
 export async function handleChat(message, transactions, accounts, history, userId) {
   const systemPrompt = buildSystemPrompt(transactions, accounts);
 
-  // Format history: drop long hallucinated assistant messages from before the fix
+  // Format history: keep more messages so AI doesn't forget context during long workflows
   const normalizedHistory = (history || [])
     .filter(h => h.role === 'user' || (h.role === 'assistant' && h.content && h.content.length < 150))
-    .slice(-4).map(h => ({
+    .slice(-10).map(h => ({
       role: h.role === 'user' ? 'user' : 'assistant',
       content: h.content || ''
     }));
@@ -110,8 +114,8 @@ export async function handleChat(message, transactions, accounts, history, userI
   let action = null;
   let reply = rawText;
 
-  // Check if AI responded with the action JSON
-  const jsonMatch = rawText.match(/\{[\s\S]*?"action"\s*:\s*"ADD_TRANSACTION"[\s\S]*?\}/);
+  // Check if AI responded with the action JSON (greedy match for full object)
+  const jsonMatch = rawText.match(/\{[\s\S]*"action"\s*:\s*"ADD_TRANSACTION"[\s\S]*\}/);
   if (jsonMatch) {
     try {
       action = JSON.parse(jsonMatch[0]);
