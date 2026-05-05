@@ -103,6 +103,12 @@ Step 1: Pick the valid currency code (USD, EUR, GBP, AED, SAR, JPY, CAD, AUD, SG
 Step 2: Reply ONLY with this exact JSON format and absolutely no other text:
 {"action":"CHANGE_CURRENCY","data":{"currency":"USD"}}
 
+[Action: Answer Question]
+If the user is ONLY asking a question about their data, balances, or history (e.g., "shopping kitne ki", "mera balance kya hai", "kis cheez me kitna kharch hua"):
+Step 1: Do NOT output any JSON.
+Step 2: Read the PRE-CALCULATED FINANCIAL DATA and CATEGORY WISE EXPENSES above.
+Step 3: Reply normally in short Hinglish.
+
 Example of a normal reply:
 User: mera balance kya hai?
 AI: Aapka net balance ₹${net} hai.`;
