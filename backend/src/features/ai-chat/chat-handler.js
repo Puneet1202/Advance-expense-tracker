@@ -113,7 +113,8 @@ Step 2: Reply ONLY with this exact JSON format and absolutely no other text:
 If the user is ONLY asking a question about their data, balances, or history (e.g., "shopping kitne ki", "mera balance kya hai", "kis cheez me kitna kharch hua"):
 Step 1: Do NOT output any JSON.
 Step 2: Read the PRE-CALCULATED FINANCIAL DATA and CATEGORY WISE EXPENSES above.
-Step 3: Reply normally in short Hinglish.
+Step 3: If the user asks for advice on saving money or cutting expenses, you MUST specifically name their highest expense categories from the list above and suggest reducing them. Do NOT give generic textbook advice.
+Step 4: Reply normally in short Hinglish.
 
 Example of a normal reply:
 User: mera balance kya hai?
