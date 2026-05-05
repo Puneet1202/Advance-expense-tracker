@@ -97,6 +97,12 @@ If the user says they made a mistake and wants to revert/undo the last change (e
 Step 1: Reply ONLY with this exact JSON format and absolutely no other text:
 {"action":"UNDO_LAST_ACTION","data":{}}
 
+[Action: Change Theme]
+If the user asks to change the visual theme or mode (e.g., "dark mode on karo", "light mode laga do", "ankho me dard ho raha hai dark theme karo"):
+Step 1: Determine the requested theme ('dark' or 'light').
+Step 2: Reply ONLY with this exact JSON format and absolutely no other text:
+{"action":"CHANGE_THEME","data":{"theme":"dark"}}
+
 [Action: Change Currency]
 If the user asks to check currency rates or change the active currency (e.g., "Dollar ka rate dikhao", "Euro mein change karo"):
 Step 1: Pick the valid currency code (USD, EUR, GBP, AED, SAR, JPY, CAD, AUD, SGD, CHF, INR).

@@ -65,6 +65,13 @@ export default function App() {
     const key = getThemeKey();
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
     try { localStorage.setItem(key, darkMode ? 'dark' : 'light'); } catch {}
+
+    // Event listener for AI to change theme
+    const handleAiTheme = (e) => {
+      setDarkMode(e.detail === 'dark');
+    };
+    window.addEventListener('ai_change_theme', handleAiTheme);
+    return () => window.removeEventListener('ai_change_theme', handleAiTheme);
   }, [darkMode, user]);
 
   const fetchTrackerData = async () => {

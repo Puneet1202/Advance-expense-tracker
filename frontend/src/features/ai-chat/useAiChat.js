@@ -92,6 +92,12 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
         return;
       }
 
+      if (action.action === 'CHANGE_THEME') {
+        window.dispatchEvent(new CustomEvent('ai_change_theme', { detail: action.data.theme }));
+        addMsg('assistant', `✅ ${action.data.theme === 'dark' ? 'Dark' : 'Light'} mode on kar diya gaya hai!`, true);
+        return;
+      }
+
       if (action.action === 'UNDO_LAST_ACTION') {
         await api.post('/tracker/undo');
         addMsg('assistant', `✅ Last action Undo kar diya gaya hai! App pehle jaisi ho gayi hai.`, true);
