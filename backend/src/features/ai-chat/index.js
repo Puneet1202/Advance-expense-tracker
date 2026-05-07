@@ -2,11 +2,11 @@ import { handleChat } from './chat-handler.js';
 
 export const aiChatHandler = async (c) => {
   try {
-    const user = c.get('user');
-    const db = c.env.expense_tracker_db;
+    const user = c.get('user');  //sbse phele check hoga user valid hai ya nhi
+    const db = c.env.expense_tracker_db; // database ko access krna hai isliye db ko get kr lenge
 
-    const body = await c.req.json();
-    const { message, history = [], usdRate = 83 } = body;
+    const body = await c.req.json();   // frontend se aane wala data
+    const { message, history = [], usdRate = 83 } = body; // frontend se aane wala data
 
     if (!message?.trim()) {
       return c.json({ message: 'Message empty nahi ho sakta', status: 400 }, 400);
@@ -36,7 +36,7 @@ export const aiChatHandler = async (c) => {
       `SELECT id, name FROM ACCOUNTS WHERE user_id = ?`
     ).bind(user.id).all();
 
-    const accounts = (accountsResult.results || []).map(acc => {
+    const accounts = (accountsResult.results || []).map(acc => {  // accounts ka balance nikal rhe hai
       let balance = 0;
       (allTxnResult.results || []).forEach(t => {
         if (t.account_id === acc.id) {

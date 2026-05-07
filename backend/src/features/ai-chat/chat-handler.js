@@ -37,9 +37,9 @@ function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHin
   const net = totalIncome - totalExpense;
 
   const categoryLines = Object.entries(categoryTotals)
-    .sort((a, b) => b[1] - a[1])
-    .map(([cat, amt]) => `- ${cat}: ₹${amt}`)
-    .join('\n') || '- No expenses yet';
+    .sort((a, b) => b[1] - a[1])  // Sabse bada kharcha upar rakho
+    .map(([cat, amt]) => `- ${cat}: ₹${amt}`)  // Har category ko ek line mein likho
+    .join('\n') || '- No expenses yet';  // Sabko ek ke niche ek chipka do
 
   const accountLines = accounts.length
     ? accounts.map(a => `- ${a.name}: ₹${a.balance}`).join('\n')
