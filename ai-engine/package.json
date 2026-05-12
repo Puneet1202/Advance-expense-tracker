@@ -2,7 +2,7 @@
   "name": "ai-engine",
   "version": "1.0.0",
   "description": "",
-  "main": "inddex.js",
+  "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js"

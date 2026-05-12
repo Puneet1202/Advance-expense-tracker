@@ -7,9 +7,9 @@
  * NO AI, NO third party API. Pure local.
  */
 
-import { createRequire } from 'module'
-const require = createRequire(import.meta.url)
-const pdfParseLib = require('pdf-parse')
+// import { createRequire } from 'node:module'
+// const require = createRequire(import.meta.url)
+// const pdfParseLib = require('pdf-parse')
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
 

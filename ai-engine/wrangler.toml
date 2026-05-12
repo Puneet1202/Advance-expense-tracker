@@ -1,0 +1,24 @@
+name = "ai-engine"
+main = "index.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = [ "nodejs_compat" ]
+
+# Dev server port — AI Engine always 8788 par chalega
+[dev]
+port = 8788
+
+
+# ⚠️ IMPORTANT: database_id ko Cloudflare Dashboard se lo
+# Path: dash.cloudflare.com → Workers & Pages → D1 → expense-tracker-db → Settings
+# Wahan jo UUID hai wo yahan paste karo (Account ID se ALAG hoga)
+[[d1_databases]]
+binding = "expense_tracker_db"
+database_name = "expense-tracker-db"
+database_id = "e9917c0e-da98-4a96-8dd0-530b000c9974"
+
+[[vectorize]]
+binding = "VECTOR_DB"
+index_name = "expense-index"
+
+[ai]
+binding = "AI"

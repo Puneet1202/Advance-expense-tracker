@@ -6,3 +6,8 @@ compatibility_date = "2026-04-28"
 binding = "expense_tracker_db"
 database_name = "expense-tracker-db"
 database_id = "e9917c0e-da98-4a96-8dd0-530b000c9974"
+
+
+[[vectorize]]
+binding = "VECTOR_DB"
+index_name = "expense-index"
