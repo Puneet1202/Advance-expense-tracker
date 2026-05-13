@@ -3,7 +3,7 @@
  * Pre-calculates all financial numbers in JavaScript.
  * Generates an English-only strict system prompt.
  */
-const AI_ENGINE_URL = 'http://localhost:4000'
+const AI_ENGINE_URL = 'http://localhost:8788'
 
 function guessCategory(desc = '') {
   const d = desc.toLowerCase();
@@ -22,19 +22,35 @@ function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHin
   // Pre-calculate ALL numbers in JavaScript
   let totalIncome = 0;
   let totalExpense = 0;
+  let currentMonthIncome = 0;
+  let currentMonthExpense = 0;
   const categoryTotals = {};
 
+  // Get current year and month in YYYY-MM format
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   transactions.forEach(t => {
+    // Ignore internal transfers so they don't artificially inflate total income/expense (MATCHES UI LOGIC)
+    if (t.description && t.description.includes('(Account Closing)')) {
+      return;
+    }
+
     const cat = guessCategory(t.description);
+    const isCurrentMonth = t.created_at && t.created_at.startsWith(currentMonthStr);
+
     if (t.type === 'expense') {
       totalExpense += t.amount;
+      if (isCurrentMonth) currentMonthExpense += t.amount;
       categoryTotals[cat] = (categoryTotals[cat] || 0) + t.amount;
     } else if (t.type === 'income') {
       totalIncome += t.amount;
+      if (isCurrentMonth) currentMonthIncome += t.amount;
     }
   });
 
   const net = totalIncome - totalExpense;
+  const currentMonthNet = currentMonthIncome - currentMonthExpense;
 
   const categoryLines = Object.entries(categoryTotals)
     .sort((a, b) => b[1] - a[1])  // Sabse bada kharcha upar rakho
@@ -47,6 +63,8 @@ function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHin
 
   const accountNames = accounts.map(a => a.name).join(', ') || 'N/A';
 
+  const totalAccountBalance = accounts.reduce((sum, a) => sum + Number(a.balance), 0);
+
   return `You are a specialized expense tracker assistant.
 Your ONLY source of truth is the exact data provided below and the specific transactions retrieved from the database.
 
@@ -55,9 +73,16 @@ ${accountHint || "No account auto-detected. Check history or ask."}
 ${mathHint || "No foreign currency auto-detected."}
 
 === PRE-CALCULATED FINANCIAL DATA ===
-Total Income: ₹${totalIncome}
-Total Expense: ₹${totalExpense}
-Net Balance: ₹${net}
+Total Account Balance (Current Available Money): ₹${totalAccountBalance}  <-- ALWAYS USE THIS NUMBER IF USER ASKS FOR "BALANCE" OR "KITNE PAISE HAIN"
+
+Total Income (All-Time): ₹${totalIncome}
+Total Expense (All-Time): ₹${totalExpense}
+Net Difference (Income minus Expense): ₹${net}
+
+Income (Current Month: ${currentMonthStr}): ₹${currentMonthIncome}
+Expense (Current Month: ${currentMonthStr}): ₹${currentMonthExpense}
+Net Difference (Current Month: ${currentMonthStr}): ₹${currentMonthNet}
+
 Live USD Exchange Rate: $1 USD = ₹${usdRate} INR
 
 === CATEGORY WISE EXPENSES ===
