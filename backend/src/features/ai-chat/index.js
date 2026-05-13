@@ -43,7 +43,7 @@ export const aiChatHandler = async (c) => {
            balance += t.type === 'income' ? t.amount : -t.amount;
         }
       });
-      return { name: acc.name, balance: Math.round(balance) };
+      return { name: acc.name, balance: parseFloat(balance.toFixed(2)) };
     });
 
     // Pass everything to chat handler (including userId for ChromaDB)
