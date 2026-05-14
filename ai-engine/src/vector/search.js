@@ -1,10 +1,31 @@
+// FILE: ai-engine/src/vector/search.js
+// KAAM: Vector similarity search — user ke question se milti-julti transactions dhundta hai
+//
+// SECURITY FIX:
+//   Pehle match_expenses RPC mein user_id filter nahi tha
+//   Matlab: ek user ka question doosre user ki transactions match kar sakta tha (PRIVACY BUG!)
+//   Ab: filter_user_id parameter match_expenses function ko bhejte hain
+//   Supabase mein match_expenses function update karna hoga:
+//
+//   CREATE OR REPLACE FUNCTION match_expenses(
+//     query_embedding vector(768),
+//     match_threshold float,
+//     match_count int,
+//     filter_user_id bigint DEFAULT NULL  ← YE ADD KARO
+//   )
+//   RETURNS TABLE(id bigint, similarity float)
+//   LANGUAGE sql STABLE AS $$
+//     SELECT id, 1 - (embedding <=> query_embedding) AS similarity
+//     FROM transactions
+//     WHERE (filter_user_id IS NULL OR user_id = filter_user_id)  ← YE FILTER ADD KARO
+//       AND 1 - (embedding <=> query_embedding) > match_threshold
+//     ORDER BY embedding <=> query_embedding
+//     LIMIT match_count;
+//   $$;
+
 import { getSupabaseClient } from '../db/supabase.js';
 import { getEmbeddings } from '../ai/embedding.js';
 import AI_CONFIG from '../../ai-config.js';
-
-// FILE: Searches relevant transactions using pgvector
-// REPLACES: ai-engine/rag/indexer.js.old (searchRelevantTransactions part)
-// CONNECTS TO: db/supabase.js (rpc match_expenses), ai/embedding.js
 
 /**
  * Step 2: Semantic Search — "Meaning" se match karta hai, keyword se nahi
@@ -18,11 +39,13 @@ export async function searchRelevantTransactions(userId, question, env) {
     const queryVector = await getEmbeddings(question, env);
 
     // 2. Supabase pgvector (match_expenses RPC) se milte-julte expenses maango
-    // STEP 6: VECTORIZE REPLACE -> pgvector
+    // WHY filter_user_id: Pehle koi user filter nahi tha — doosre user ki expenses bhi
+    // match ho sakti thi. Ab sirf is user ki transactions search hogi.
     const { data: matches, error } = await supabase.rpc('match_expenses', {
       query_embedding: queryVector,
       match_threshold: AI_CONFIG.vectorConfig.threshold,
-      match_count: AI_CONFIG.vectorConfig.topK
+      match_count: AI_CONFIG.vectorConfig.topK,
+      filter_user_id: userId  // SECURITY FIX: user-specific search
     });
 
     if (error) {

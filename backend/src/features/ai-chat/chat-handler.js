@@ -1,9 +1,44 @@
-/**
- * chat-handler.js (backend)
- * Pre-calculates all financial numbers in JavaScript.
- * Generates an English-only strict system prompt.
- */
-const AI_ENGINE_URL = 'http://localhost:8788'
+// FILE: backend/src/features/ai-chat/chat-handler.js
+// KAAM: System prompt banata hai (pre-calculated data ke saath) + AI Engine call karta hai
+//
+// SECURITY FIXES:
+//   1. PROMPT INJECTION: sanitizeInput() jailbreak patterns block karta hai
+//      Attacker "Ignore all instructions" type kare → BLOCKED
+//   2. INPUT LENGTH LIMIT: 2000 chars max — long injection payloads block hote hain
+//   3. DANGEROUS ACTIONS: Frontend mein confirmation step add ki hai (useAiChat.js)
+//      DELETE_TRANSACTION aur UNDO_LAST_ACTION ke liye user se confirm karo
+
+const AI_ENGINE_URL = 'http://localhost:8788';
+
+// ── Prompt Injection Protection ───────────────────────────────────────────────
+// WHY: LLM ko mislead karne ke common patterns block karne ke liye
+// Office AI ne bhi yahi issue bataya tha — ye patterns jailbreak attacks hain
+const INJECTION_PATTERNS = [
+    /ignore\s+(all\s+|previous\s+|above\s+)?instructions?/i,
+    /forget\s+(everything|all|your|previous)/i,
+    /you\s+are\s+now\s+/i,
+    /new\s+instructions?\s*:/i,
+    /\[\s*system\s*\]/i,
+    /\bsystem\s+prompt\b/i,
+    /ignore\s+(the|your)\s+(rules?|guidelines?)/i,
+    /jailbreak/i,
+    /act\s+as\s+if\s+you/i,
+    /pretend\s+you\s+(are|have\s+no)/i,
+    /disregard\s+(all|any|previous)/i,
+];
+
+function sanitizeInput(text) {
+    if (!text || typeof text !== 'string') return '';
+    // Injection pattern mila to blocked message return karo
+    for (const pattern of INJECTION_PATTERNS) {
+        if (pattern.test(text)) {
+            console.warn('[SECURITY] Prompt injection attempt blocked:', text.substring(0, 100));
+            return '[SECURITY: Harmful input detected and blocked]';
+        }
+    }
+    // Max 2000 chars — long prompts mein hidden injection payloads block karo
+    return text.slice(0, 2000);
+}
 
 function guessCategory(desc = '') {
   const d = desc.toLowerCase();
@@ -160,9 +195,18 @@ AI: Aapka net balance ₹${net} hai.`;
 }
 
 export async function handleChat(message, transactions, accounts, history, userId, usdRate = 83) {
+  // WHY: User input sanitize karo pehle — injection attacks block karo
+  const safeMessage = sanitizeInput(message);
+  if (safeMessage !== message) {
+    // Injection mili — blocked message return karo directly
+    if (safeMessage.includes('[SECURITY:')) {
+      return { reply: '⚠️ Ye message process nahi ho sakta. Kripya normal sawal poochho.', action: null };
+    }
+  }
   // Pre-calculate USD conversions in JS to help LLM
   let mathHint = "";
-  const match = message.match(/(\d+(?:\.\d+)?)\s*(?:usd|\$)/i) || message.match(/\$\s*(\d+(?:\.\d+)?)/i);
+  // WHY: safeMessage use karo (sanitized) — original message mein injection ho sakti thi
+  const match = safeMessage.match(/(\d+(?:\.\d+)?)\s*(?:usd|\$)/i) || safeMessage.match(/\$\s*(\d+(?:\.\d+)?)/i);
   if (match) {
     const usdAmount = parseFloat(match[1]);
     const inrAmount = Math.round(usdAmount * usdRate);
@@ -171,7 +215,7 @@ export async function handleChat(message, transactions, accounts, history, userI
   
   // Pre-extract account to help LLM
   let accountHint = "";
-  const lowerMessage = message.toLowerCase();
+  const lowerMessage = safeMessage.toLowerCase(); // WHY: sanitized input use karo
   for (const acc of accounts) {
     if (lowerMessage.includes(acc.name.toLowerCase())) {
       accountHint = `ACCOUNT FACT: The user explicitly mentioned the account "${acc.name}". Do NOT ask them for the account again! Use "${acc.name}" in your JSON.`;
@@ -189,12 +233,13 @@ export async function handleChat(message, transactions, accounts, history, userI
       content: h.content || ''
     }));
 
-  // Send everything to AI Engine (including ALL transactions for ChromaDB RAG indexing)
+  // Send everything to AI Engine
+  // WHY: safeMessage bhejo (sanitized) — injection attempt already block ho chuka hai
   const res = await fetch(`${AI_ENGINE_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      question: message,
+      question: safeMessage,  // sanitized input
       systemPrompt,
       history: normalizedHistory,
       userId: userId,

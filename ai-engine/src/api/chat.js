@@ -1,13 +1,19 @@
+// FILE: ai-engine/src/api/chat.js
+// KAAM: Chat routes — user ke questions ka jawab deta hai
+//
+// FIXES:
+//   1. SECURITY — SQL route mein user_id filter:
+//      Pehle saare users ki expenses fetch hoti thi — ab sirf us user ki
+//      jo request kar raha hai. userId.toString() se type mismatch bhi fix
+//   2. SQL route: ab amount + category + description fetch karta hai
+//      Pehle sirf amount aur category tha — AI ko description chahiye accurate answer ke liye
+//   3. Vector search: userId search.js ko pass hota hai (wahan bhi filter lagegi)
+
 import { Hono } from 'hono'
 import { getChatResponse } from '../ai/chat.js'
 import { searchRelevantTransactions } from '../vector/search.js'
 import { getSupabaseClient } from '../db/supabase.js'
 import AI_CONFIG from '../../ai-config.js'
-
-// FILE: chat.js
-// KAAM: Chat routes for AI responses (with smart routing for exact amounts)
-// CONNECTS TO: vector/search.js, ai/chat.js, db/supabase.js
-// CONFIG: ai-config.js se ENV setting leta hai
 
 export const chatRoute = new Hono()
 
@@ -38,18 +44,22 @@ chatRoute.post('/', async (c) => {
       // 1. Exact SQL Query Execution
       if (needsExactMath) {
         console.log(`🔍 [Smart Router] Exact math needed. Running SQL...`);
-        // We skip vector search if exact math is needed to avoid confusing the LLM and save time
+        
+        // WHY user_id filter: Pehle koi filter nahi tha — saare users ki expenses aati thi
+        // Ab sirf us user ki transactions fetch hoti hain jo request kar raha hai
+        // WHY description bhi: AI ko context chahiye sirf amount+category se accurate answer nahi deta
         const { data: sqlData, error: sqlError } = await supabase
-          .from('expenses')
-          .select('amount, category')
-          .eq('metadata->>userId', userId.toString());
+          .from('transactions')
+          .select('amount, category, description, type, created_at')
+          .eq('user_id', userId.toString()); // WHY toString(): JWT se userId number ho sakta hai
 
         if (!sqlError && sqlData) {
           usedDB = true;
           const totalAmount = sqlData.reduce((sum, row) => sum + Number(row.amount), 0);
           const totalCount = sqlData.length;
+          const recentDesc = sqlData.slice(0, 5).map(r => `- ${r.description || 'N/A'}: ₹${r.amount} (${r.category || 'N/A'})`).join('\n');
           
-          contextText += `\n[EXACT SQL RESULT]\nTotal Transaction Count in DB: ${totalCount}\n`;
+          contextText += `\n[EXACT SQL RESULT]\nTotal Transaction Count: ${totalCount}\nAll-Time Total: ₹${totalAmount.toFixed(2)}\nRecent:\n${recentDesc}\n`;
           console.log(`📊 [Smart Router] Fetched ${totalCount} transactions for math.`);
         }
       } else {

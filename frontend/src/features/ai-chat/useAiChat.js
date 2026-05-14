@@ -2,6 +2,11 @@
  * useAiChat.js (frontend hook)
  * AI chatbot ka poora state + logic manage karta hai.
  *
+ * SECURITY FIX (Destructive Prompting):
+ *   DELETE_TRANSACTION aur UNDO_LAST_ACTION ke liye user confirmation add ki hai.
+ *   WHY: AI galat output de ya attacker mislead kare to bhi bina confirm ke
+ *   koi transaction delete nahi hoga.
+ *
  * BUG 3 FIX: Messages ab localStorage mein persist hote hain.
  *   Key: 'ai_chat_history' — max 50 messages, purane delete.
  *   clearHistory() function bhi expose kiya gaya hai.
@@ -67,6 +72,16 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
           return;
         }
 
+        // WHY CONFIRMATION: Destructive prompting se protection
+        // AI ka output automatically transaction delete na kare — user se confirm karo
+        const confirmed = window.confirm(
+          `⚠️ Transaction delete karna chahte ho?\n\n"${description}"\n\nYe action undo nahi ho sakta (sirf 'Undo' command se).`
+        );
+        if (!confirmed) {
+          addMsg('assistant', '❌ Delete cancel kar diya gaya.');
+          return;
+        }
+
         await api.delete(`/tracker/transaction/${id}`);
 
         addMsg('assistant', `✅ Transaction delete ho gaya!\n**${description}**`, true);
@@ -99,6 +114,12 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
       }
 
       if (action.action === 'UNDO_LAST_ACTION') {
+        // WHY CONFIRMATION: Undo bhi destructive hai — galti se trigger ho sakta hai
+        const confirmed = window.confirm('Kya aap sach mein last action undo karna chahte ho?');
+        if (!confirmed) {
+          addMsg('assistant', '❌ Undo cancel kar diya gaya.');
+          return;
+        }
         await api.post('/tracker/undo');
         addMsg('assistant', `✅ Last action Undo kar diya gaya hai! App pehle jaisi ho gayi hai.`, true);
         setActionStatus({ type: 'success', text: 'Undo Successful' });

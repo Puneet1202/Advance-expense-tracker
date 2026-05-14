@@ -1,285 +1,441 @@
+// FILE: backend/src/controllers/tracker.controller.js
+// KAAM: Expense tracker ka core — transactions, accounts, settings, undo
+//
+// CHANGES (D1 → Supabase):
+//   - c.env.expense_tracker_db hata diya (D1 binding tha)
+//   - getSupabaseClient(c.env) se Supabase client lete hain
+//   - JOIN queries: supabase.from('transactions').select('*, accounts(name)')
+//     Foreign key hona chahiye: transactions.account_id → accounts.id
+//   - is_hidden: D1 mein INTEGER (0/1) tha → Supabase mein BOOLEAN (true/false)
+//   - PostgreSQL mein INSERT RETURNING id kaam karta hai Supabase mein bhi
+//   - Filtering (date, type, search) JS mein hi karte hain — same as before
+
+import { getSupabaseClient } from '../db/supabase.js';
+
+// ─── Helper: Transactions fetch with account_name JOIN ────────────────────────
+// WHY HELPER: Ye JOIN Supabase mein foreign key se hoti hai.
+// accounts(name) → transactions.account_id → accounts.id
+// Result: [{..., accounts: {name: 'HDFC'}}] → hum map kar ke account_name bana dete hain
+async function fetchAllTransactions(supabase, userId) {
+    const { data, error } = await supabase
+        .from('transactions')
+        .select('*, accounts(name)')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // accounts nested object → account_name flat field (frontend ke sath compatible)
+    return (data || []).map(t => ({
+        ...t,
+        account_name: t.accounts?.name || null,
+        accounts: undefined // remove nested object
+    }));
+}
+
+// ─── Helper: Account balance calculate karna ──────────────────────────────────
+function calcBalance(transactions, accountId) {
+    let bal = 0;
+    transactions.forEach(t => {
+        if (t.account_id === accountId) {
+            if (t.type === 'income') bal += t.amount;
+            if (t.type === 'expense') bal -= t.amount;
+        }
+    });
+    return bal;
+}
+
+// ─── GET /api/tracker ─────────────────────────────────────────────────────────
 export const getTrackerData = async (c) => {
-        try {
-            const user = c.get('user');
-            const db = c.env.expense_tracker_db;
-            const month = c.req.query('month'); // Fallback ke liye
-            
-            // 1. Naye Filter Parameters Fetch Karein
-            const startDate = c.req.query('startDate');
-            const endDate = c.req.query('endDate');
-            const type = c.req.query('type'); // 'all', 'income', 'expense'
-            const search = c.req.query('search');
+    try {
+        const user = c.get('user');
+        const supabase = getSupabaseClient(c.env);
 
-            // Get user settings and profile
-            const userData = await db.prepare("SELECT name, email, expense_limit, is_saving_mode FROM USERS WHERE id = ?").bind(user.id).first();
-            
-            // Get all transactions for all-time balance calculation
-            const allTxns = await db.prepare(`
-                SELECT t.*, a.name as account_name 
-                FROM TRANSACTIONS t 
-                LEFT JOIN ACCOUNTS a ON t.account_id = a.id 
-                WHERE t.user_id = ? ORDER BY t.created_at DESC
-            `).bind(user.id).all();
-            
-            // Get all accounts and calculate their all-time balances (Original logic)
-            const accountsResult = await db.prepare("SELECT * FROM ACCOUNTS WHERE user_id = ?").bind(user.id).all();
-            
-            const accountsWithBalance = accountsResult.results.map(acc => {
-                let accIncome = 0;
-                let accExpense = 0;
-                allTxns.results.forEach(t => {
-                    if (t.account_id === acc.id) {
-                        if (t.type === 'income') accIncome += t.amount;
-                        if (t.type === 'expense') accExpense += t.amount;
-                    }
-                });
-                return { ...acc, balance: accIncome - accExpense };
+        const startDate  = c.req.query('startDate');
+        const endDate    = c.req.query('endDate');
+        const month      = c.req.query('month');
+        const type       = c.req.query('type');
+        const search     = c.req.query('search');
+
+        // 1. User profile (expense_limit, is_saving_mode)
+        // WHY: D1 mein .first() tha → Supabase mein .single() ya .maybeSingle()
+        const { data: userData, error: userErr } = await supabase
+            .from('users')
+            .select('name, email, expense_limit, is_saving_mode')
+            .eq('id', user.id)
+            .maybeSingle();
+        if (userErr) throw userErr;
+
+        // 2. Saari transactions (account_name JOIN ke sath)
+        const allTxns = await fetchAllTransactions(supabase, user.id);
+
+        // 3. Accounts list
+        const { data: accountsData, error: accErr } = await supabase
+            .from('accounts')
+            .select('*')
+            .eq('user_id', user.id);
+        if (accErr) throw accErr;
+
+        // 4. Har account ka all-time balance — JS mein calculate (same as D1 logic)
+        const accountsWithBalance = (accountsData || []).map(acc => ({
+            ...acc,
+            balance: calcBalance(allTxns, acc.id)
+        }));
+
+        // 5. Filtering — same JS logic as before
+        let filteredTxns = allTxns;
+
+        if (startDate && endDate) {
+            filteredTxns = filteredTxns.filter(t => {
+                const txDate = t.created_at ? t.created_at.split('T')[0].split(' ')[0] : '';
+                return txDate >= startDate && txDate <= endDate;
+            });
+        } else if (month) {
+            filteredTxns = filteredTxns.filter(t => t.created_at && t.created_at.startsWith(month));
+        }
+
+        if (type && type !== 'all') {
+            filteredTxns = filteredTxns.filter(t => t.type === type);
+        }
+
+        if (search) {
+            const query = search.toLowerCase();
+            filteredTxns = filteredTxns.filter(t =>
+                (t.description && t.description.toLowerCase().includes(query)) ||
+                (t.account_name && t.account_name.toLowerCase().includes(query))
+            );
+        }
+
+        // 6. Monthly/filtered totals
+        let monthlyIncome = 0;
+        let monthlyExpenses = 0;
+        filteredTxns.forEach(t => {
+            // Account Closing transactions ko ignore karo (ek account se doosre ka transfer)
+            if (!t.description || !t.description.includes('(Account Closing)')) {
+                if (t.type === 'income') monthlyIncome += t.amount;
+                else if (t.type === 'expense') monthlyExpenses += t.amount;
+            }
+        });
+
+        // WHY: D1 mein is_hidden INTEGER (0) tha → Supabase mein BOOLEAN (false)
+        // Dono handle karte hain agar migration ke waqt kuch row integer mein aa jaaye
+        const visibleMonthTxns = filteredTxns.filter(t => !t.is_hidden && t.is_hidden !== 1);
+
+        // Available months for month picker
+        const monthSet = new Set();
+        allTxns.forEach(t => {
+            if (t.created_at) {
+                const m = (t.created_at.split('T')[0] || t.created_at).substring(0, 7);
+                if (m) monthSet.add(m);
+            }
+        });
+        const available_months = [...monthSet].sort();
+
+        return c.json({
+            user: {
+                id: user.id,
+                email: userData?.email || user.email,
+                name: userData?.name || user.name || 'User'
+            },
+            expense_limit: userData?.expense_limit || 0,
+            is_saving_mode: userData?.is_saving_mode ? true : false,
+            total_income: monthlyIncome,
+            total_expenses: monthlyExpenses,
+            transactions: visibleMonthTxns,
+            accounts: accountsWithBalance,
+            available_months,
+            status: 200
+        }, 200);
+
+    } catch (error) {
+        console.error("Tracker Data Error:", error);
+        return c.json({ message: "internal server error", status: 500 }, 500);
+    }
+};
+
+// ─── POST /api/tracker/settings ───────────────────────────────────────────────
+export const updateSettings = async (c) => {
+    try {
+        const user = c.get('user');
+        const supabase = getSupabaseClient(c.env);
+        const { expense_limit, is_saving_mode } = await c.req.json();
+
+        // WHY: D1 UPDATE → Supabase .update().eq()
+        const { error } = await supabase
+            .from('users')
+            .update({
+                expense_limit: expense_limit || 0,
+                is_saving_mode: !!is_saving_mode // boolean ensure karo
+            })
+            .eq('id', user.id);
+
+        if (error) throw error;
+        return c.json({ message: "Settings updated", status: 200 }, 200);
+    } catch (error) {
+        return c.json({ message: "internal server error", status: 500 }, 500);
+    }
+};
+
+// ─── POST /api/tracker/transaction ────────────────────────────────────────────
+export const addTransaction = async (c) => {
+    try {
+        const user = c.get('user');
+        const supabase = getSupabaseClient(c.env);
+        let { type, amount, description, account_id } = await c.req.json();
+
+        if (!amount || !type || !account_id) {
+            return c.json({ message: "Amount, Type and Account are required", status: 400 }, 400);
+        }
+
+        if (!description || description.trim() === '') {
+            description = type === 'income' ? 'Income' : 'Expense';
+        }
+
+        if (amount <= 0) {
+            return c.json({ message: "Amount must be a positive number", status: 400 }, 400);
+        }
+
+        // Expense ke liye balance check
+        if (type === 'expense' && account_id) {
+            // WHY: D1 JOIN nahi karte the balance ke liye — Supabase mein bhi alag query safe hai
+            const { data: txns, error: txnErr } = await supabase
+                .from('transactions')
+                .select('type, amount')
+                .eq('user_id', user.id)
+                .eq('account_id', account_id);
+
+            if (txnErr) throw txnErr;
+
+            let accBalance = 0;
+            (txns || []).forEach(t => {
+                if (t.type === 'income') accBalance += t.amount;
+                if (t.type === 'expense') accBalance -= t.amount;
             });
 
-            // 2. --- ADVANCED FILTERING LOGIC ---
-            let filteredTxns = allTxns.results;
+            if (amount > accBalance) {
+                return c.json({
+                    message: `Insufficient balance! You only have ₹${accBalance} in this account.`,
+                    status: 400
+                }, 400);
+            }
+        }
 
-            // Date Range ya Month (Fallback) se filter
-            if (startDate && endDate) {
-                filteredTxns = filteredTxns.filter(t => {
-                    // Agar timestamp mein time bhi hai, toh sirf date nikalo (e.g., '2026-05-01')
-                    const txDate = t.created_at ? t.created_at.split(' ')[0] : '';
-                    return txDate >= startDate && txDate <= endDate;
-                });
-            } else if (month) {
-                 filteredTxns = filteredTxns.filter(t => t.created_at && t.created_at.startsWith(month));
+        // Transaction insert karo
+        const { error } = await supabase
+            .from('transactions')
+            .insert({
+                user_id: user.id,
+                type,
+                amount,
+                description,
+                account_id: account_id || null
+            });
+
+        if (error) throw error;
+        return c.json({ message: "Transaction added", status: 200 }, 200);
+
+    } catch (error) {
+        return c.json({ message: "internal server error", status: 500 }, 500);
+    }
+};
+
+// ─── DELETE /api/tracker/transaction/:id ──────────────────────────────────────
+export const deleteTransaction = async (c) => {
+    try {
+        const user = c.get('user');
+        const supabase = getSupabaseClient(c.env);
+        const id = Number(c.req.param('id'));
+
+        // WHY: user_id bhi filter mein hai — doosra user kisi ka transaction delete na kar sake
+        const { error } = await supabase
+            .from('transactions')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+
+        if (error) throw error;
+        return c.json({ message: "Transaction deleted from history", status: 200 }, 200);
+
+    } catch (error) {
+        return c.json({ message: "internal server error", status: 500 }, 500);
+    }
+};
+
+// ─── POST /api/tracker/account ────────────────────────────────────────────────
+export const addAccount = async (c) => {
+    try {
+        const user = c.get('user');
+        const supabase = getSupabaseClient(c.env);
+        const { name } = await c.req.json();
+
+        if (!name) return c.json({ message: "Name is required", status: 400 }, 400);
+
+        const { error } = await supabase
+            .from('accounts')
+            .insert({ user_id: user.id, name });
+
+        if (error) throw error;
+        return c.json({ message: "Account added", status: 200 }, 200);
+
+    } catch (error) {
+        return c.json({ message: "internal server error", status: 500 }, 500);
+    }
+};
+
+// ─── DELETE /api/tracker/account/:id ──────────────────────────────────────────
+export const deleteAccount = async (c) => {
+    try {
+        const user = c.get('user');
+        const supabase = getSupabaseClient(c.env);
+        const id = Number(c.req.param('id'));
+
+        let body = {};
+        try { body = await c.req.json(); } catch (e) {}
+        let transfer_account_id = body.transfer_account_id;
+        const auto_create_account_name = body.auto_create_account_name;
+
+        // Account naam fetch karo (closing account ka naam transfer description mein lagega)
+        const { data: closingAcc } = await supabase
+            .from('accounts')
+            .select('name')
+            .eq('id', id)
+            .eq('user_id', user.id)
+            .maybeSingle();
+        const closingAccName = closingAcc?.name || 'Account';
+
+        // Saari transactions fetch karke balance nikalo
+        const { data: txns, error: txnErr } = await supabase
+            .from('transactions')
+            .select('type, amount')
+            .eq('user_id', user.id)
+            .eq('account_id', id);
+        if (txnErr) throw txnErr;
+
+        let balance = 0;
+        (txns || []).forEach(t => {
+            if (t.type === 'income') balance += t.amount;
+            if (t.type === 'expense') balance -= t.amount;
+        });
+
+        // Agar balance hai to transfer karna padega
+        if (balance !== 0) {
+            if (!transfer_account_id && !auto_create_account_name) {
+                return c.json({ message: "BALANCE_REMAINING", balance, status: 400 }, 400);
             }
 
-            // Transaction Type (Income ya Expense)
-            if (type && type !== 'all') {
-                filteredTxns = filteredTxns.filter(t => t.type === type);
+            // Nayi account auto-create karo agar naam diya gaya
+            if (!transfer_account_id && auto_create_account_name) {
+                // WHY: INSERT RETURNING — Supabase mein .select() ke saath kaam karta hai
+                const { data: newAcc, error: newAccErr } = await supabase
+                    .from('accounts')
+                    .insert({ user_id: user.id, name: auto_create_account_name })
+                    .select('id')
+                    .single();
+                if (newAccErr) throw newAccErr;
+                transfer_account_id = newAcc.id;
             }
 
-            // Search (Description ya Account Name ke basis par)
-            if (search) {
-                const query = search.toLowerCase();
-                filteredTxns = filteredTxns.filter(t => {
-                    const descMatch = t.description && t.description.toLowerCase().includes(query);
-                    const accMatch = t.account_name && t.account_name.toLowerCase().includes(query);
-                    return descMatch || accMatch;
-                });
-            }
+            const transferAmount = Math.abs(balance);
+            const outType = balance > 0 ? 'expense' : 'income';
+            const inType  = balance > 0 ? 'income'  : 'expense';
 
-            // 3. Calculate Monthly/Filtered totals (Includes hidden transactions as per user request)
-            let monthlyIncome = 0;
-            let monthlyExpenses = 0;
-            filteredTxns.forEach(t => {
-                if (!t.description || !t.description.includes('(Account Closing)')) {
-                    if (t.type === 'income') monthlyIncome += t.amount;
-                    else if (t.type === 'expense') monthlyExpenses += t.amount;
+            // Transfer transactions insert karo
+            await supabase.from('transactions').insert([
+                {
+                    user_id: user.id, type: outType, amount: transferAmount,
+                    description: 'Transfer out (Account Closing)', account_id: id
+                },
+                {
+                    user_id: user.id, type: inType, amount: transferAmount,
+                    description: `Transfer in from ${closingAccName} (Account Closing)`,
+                    account_id: transfer_account_id
                 }
-            });
+            ]);
+        }
 
-            // Hide transactions that were deleted by the user from the UI
-            const visibleMonthTxns = filteredTxns.filter(t => t.is_hidden === 0);
+        // Transactions unlink karo (account_id null karo) phir account delete karo
+        await supabase
+            .from('transactions')
+            .update({ account_id: null })
+            .eq('account_id', id)
+            .eq('user_id', user.id);
 
-            // Get list of months that have data
-            const monthSet = new Set();
-            allTxns.results.forEach(t => {
-                if (t.created_at) monthSet.add(t.created_at.substring(0, 7));
-            });
-            const available_months = [...monthSet].sort();
+        await supabase
+            .from('accounts')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+
+        return c.json({ message: "Account deleted", status: 200 }, 200);
+
+    } catch (error) {
+        console.error("Delete Account Error:", error);
+        return c.json({ message: "internal server error", details: error.message, status: 500 }, 500);
+    }
+};
+
+// ─── DELETE /api/tracker/reset ────────────────────────────────────────────────
+export const resetAllData = async (c) => {
+    try {
+        const user = c.get('user');
+        const supabase = getSupabaseClient(c.env);
+
+        // WHY: Pehle transactions delete karo (foreign key constraint ke wajah se)
+        // Phir accounts delete karo
+        const { error: txnErr } = await supabase
+            .from('transactions')
+            .delete()
+            .eq('user_id', user.id);
+        if (txnErr) throw txnErr;
+
+        const { error: accErr } = await supabase
+            .from('accounts')
+            .delete()
+            .eq('user_id', user.id);
+        if (accErr) throw accErr;
+
+        return c.json({ message: "All data reset successfully", status: 200 }, 200);
+
+    } catch (error) {
+        console.error("Reset error:", error);
+        return c.json({ message: "internal server error", error: error.message, status: 500 }, 500);
+    }
+};
+
+// ─── POST /api/tracker/undo ───────────────────────────────────────────────────
+export const undoLastTransaction = async (c) => {
+    try {
+        const user = c.get('user');
+        const supabase = getSupabaseClient(c.env);
+
+        // Sabse recent transaction dhundo (id DESC)
+        const { data: lastTxn, error: fetchErr } = await supabase
+            .from('transactions')
+            .select('id, description, amount')
+            .eq('user_id', user.id)
+            .order('id', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (fetchErr) throw fetchErr;
+
+        if (lastTxn) {
+            await supabase
+                .from('transactions')
+                .delete()
+                .eq('id', lastTxn.id)
+                .eq('user_id', user.id);
 
             return c.json({
-                user: { id: user.id, email: userData?.email || user.email, name: userData?.name || user.name || 'User' },
-                expense_limit: userData?.expense_limit || 0,
-                is_saving_mode: userData?.is_saving_mode ? true : false,
-                total_income: monthlyIncome, // Naya filtered income
-                total_expenses: monthlyExpenses, // Naya filtered expense
-                transactions: visibleMonthTxns, // Naya filtered array
-                accounts: accountsWithBalance, // Original balance
-                available_months,
+                message: `Undo successful: Removed '${lastTxn.description}' (₹${lastTxn.amount})`,
                 status: 200
             }, 200);
-        } catch (error) {
-            console.error("Tracker Data Error:", error);
-            return c.json({ message: "internal server error", status: 500 }, 500);
         }
-    };
 
-    export const updateSettings = async (c) => {
-        try {
-            const user = c.get('user');
-            const db = c.env.expense_tracker_db;
-            const { expense_limit, is_saving_mode } = await c.req.json();
+        return c.json({ message: "Koi recent action nahi mila jise undo kiya ja sake.", status: 400 }, 400);
 
-            await db.prepare("UPDATE USERS SET expense_limit = ?, is_saving_mode = ? WHERE id = ?")
-                .bind(expense_limit || 0, is_saving_mode ? 1 : 0, user.id)
-                .run();
-
-            return c.json({ message: "Settings updated", status: 200 }, 200);
-        } catch (error) {
-            return c.json({ message: "internal server error", status: 500 }, 500);
-        }
-    };
-
-    export const addTransaction = async (c) => {
-        try {
-            const user = c.get('user');
-            const db = c.env.expense_tracker_db;
-            let { type, amount, description, account_id } = await c.req.json();
-
-            if (!amount || !type || !account_id) {
-                return c.json({ message: "Amount, Type and Account are required", status: 400 }, 400);
-            }
-
-            if (!description || description.trim() === '') {
-                description = type === 'income' ? 'Income' : 'Expense';
-            }
-
-            if (amount <= 0) {
-                return c.json({ message: "Amount must be a positive number", status: 400 }, 400);
-            }
-
-            // If adding an expense to a specific account, verify balance
-            if (type === 'expense' && account_id) {
-                const allTxns = await db.prepare("SELECT type, amount FROM TRANSACTIONS WHERE user_id = ? AND account_id = ?").bind(user.id, account_id).all();
-                let accBalance = 0;
-                allTxns.results.forEach(t => {
-                    if (t.type === 'income') accBalance += t.amount;
-                    if (t.type === 'expense') accBalance -= t.amount;
-                });
-                if (amount > accBalance) {
-                    return c.json({ message: `Insufficient balance! You only have ₹${accBalance} in this account.`, status: 400 }, 400);
-                }
-            }
-
-            await db.prepare("INSERT INTO TRANSACTIONS (user_id, type, amount, description, account_id) VALUES (?, ?, ?, ?, ?)")
-                .bind(user.id, type, amount, description, account_id || null)
-                .run();
-
-            return c.json({ message: "Transaction added", status: 200 }, 200);
-        } catch (error) {
-            return c.json({ message: "internal server error", status: 500 }, 500);
-        }
-    };
-
-    export const deleteTransaction = async (c) => {
-        try {
-            const user = c.get('user');
-            const db = c.env.expense_tracker_db;
-            const id = Number(c.req.param('id'));
-
-            await db.prepare("DELETE FROM TRANSACTIONS WHERE id = ? AND user_id = ?").bind(id, user.id).run();
-            return c.json({ message: "Transaction deleted from history", status: 200 }, 200);
-        } catch (error) {
-            return c.json({ message: "internal server error", status: 500 }, 500);
-        }
-    };
-
-    export const addAccount = async (c) => {
-        try {
-            const user = c.get('user');
-            const db = c.env.expense_tracker_db;
-            const { name } = await c.req.json();
-
-            if (!name) return c.json({ message: "Name is required", status: 400 }, 400);
-
-            await db.prepare("INSERT INTO ACCOUNTS (user_id, name) VALUES (?, ?)")
-                .bind(user.id, name)
-                .run();
-
-            return c.json({ message: "Account added", status: 200 }, 200);
-        } catch (error) {
-            return c.json({ message: "internal server error", status: 500 }, 500);
-        }
-    };
-
-    export const deleteAccount = async (c) => {
-        try {
-            const user = c.get('user');
-            const db = c.env.expense_tracker_db;
-            const id = Number(c.req.param('id'));
-            
-            let body = {};
-            try { body = await c.req.json(); } catch(e) {}
-            let transfer_account_id = body.transfer_account_id;
-            const auto_create_account_name = body.auto_create_account_name;
-
-            // Fetch the name of the account being deleted
-            const closingAcc = await db.prepare("SELECT name FROM ACCOUNTS WHERE id = ? AND user_id = ?").bind(id, user.id).first();
-            const closingAccName = closingAcc ? closingAcc.name : "Account";
-
-            // Check balance first
-            const txns = await db.prepare("SELECT type, amount FROM TRANSACTIONS WHERE user_id = ? AND account_id = ?").bind(user.id, id).all();
-            let balance = 0;
-            txns.results.forEach(t => {
-                if (t.type === 'income') balance += t.amount;
-                if (t.type === 'expense') balance -= t.amount;
-            });
-
-            if (balance !== 0) {
-                if (!transfer_account_id && !auto_create_account_name) {
-                    return c.json({ 
-                        message: "BALANCE_REMAINING",
-                        balance: balance,
-                        status: 400 
-                    }, 400);
-                }
-
-                if (!transfer_account_id && auto_create_account_name) {
-                    const newAcc = await db.prepare("INSERT INTO ACCOUNTS (user_id, name) VALUES (?, ?) RETURNING id").bind(user.id, auto_create_account_name).first();
-                    transfer_account_id = newAcc.id;
-                }
-                const transferAmount = Math.abs(balance);
-                const outType = balance > 0 ? 'expense' : 'income';
-                const inType = balance > 0 ? 'income' : 'expense';
-
-                // Do the transfer: 
-                await db.prepare("INSERT INTO TRANSACTIONS (user_id, type, amount, description, account_id) VALUES (?, ?, ?, ?, ?)")
-                    .bind(user.id, outType, transferAmount, `Transfer out (Account Closing)`, id)
-                    .run();
-                    
-                await db.prepare("INSERT INTO TRANSACTIONS (user_id, type, amount, description, account_id) VALUES (?, ?, ?, ?, ?)")
-                    .bind(user.id, inType, transferAmount, `Transfer in from ${closingAccName} (Account Closing)`, transfer_account_id)
-                    .run();
-            }
-
-            await db.prepare("UPDATE TRANSACTIONS SET account_id = NULL WHERE account_id = ? AND user_id = ?").bind(id, user.id).run();
-            await db.prepare("DELETE FROM ACCOUNTS WHERE id = ? AND user_id = ?").bind(id, user.id).run();
-            return c.json({ message: "Account deleted", status: 200 }, 200);
-        } catch (error) {
-            console.error("Delete Account Error:", error);
-            return c.json({ message: "internal server error", details: error.message, status: 500 }, 500);
-        }
-    };
-
-    export const resetAllData = async (c) => {
-        try {
-            const user = c.get('user');
-            const db = c.env.expense_tracker_db;
-
-            await db.prepare("DELETE FROM TRANSACTIONS WHERE user_id = ?").bind(user.id).run();
-            await db.prepare("DELETE FROM ACCOUNTS WHERE user_id = ?").bind(user.id).run();
-
-            return c.json({ message: "All data reset successfully", status: 200 }, 200);
-        } catch (error) {
-            console.error("Reset error:", error);
-            return c.json({ message: "internal server error", error: error.message, status: 500 }, 500);
-        }
-    };
-
-    export const undoLastTransaction = async (c) => {
-        try {
-            const user = c.get('user');
-            const db = c.env.expense_tracker_db;
-            
-            // Find the most recently inserted transaction
-            const lastTxn = await db.prepare("SELECT id, description, amount FROM TRANSACTIONS WHERE user_id = ? ORDER BY id DESC LIMIT 1").bind(user.id).first();
-            
-            if (lastTxn) {
-                await db.prepare("DELETE FROM TRANSACTIONS WHERE id = ? AND user_id = ?").bind(lastTxn.id, user.id).run();
-                return c.json({ message: `Undo successful: Removed '${lastTxn.description}' (₹${lastTxn.amount})`, status: 200 }, 200);
-            }
-            
-            return c.json({ message: "Koi recent action nahi mila jise undo kiya ja sake.", status: 400 }, 400);
-        } catch (error) {
-            console.error("Undo error:", error);
-            return c.json({ message: "internal server error", error: error.message, status: 500 }, 500);
-        }
-    };
+    } catch (error) {
+        console.error("Undo error:", error);
+        return c.json({ message: "internal server error", error: error.message, status: 500 }, 500);
+    }
+};
