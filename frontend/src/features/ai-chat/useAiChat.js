@@ -173,10 +173,19 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
     setIsLoading(true);
 
     try {
-      const history = messages.slice(-8).map(m => ({
-        role:    m.role,
-        content: m.content,
-      }));
+      const history = messages
+  .filter(m => {
+    if (m.isAction) return false;  // ✅ YE IMPORTANT HAI
+    if (m.content?.includes('"action"')) return false;
+    if (m.content?.includes('✅ Transaction add ho gaya')) return false; // ✅ ADD KARO
+    if (m.content?.length > 300) return false;
+    return true;
+  })
+  .slice(-6)
+  .map(m => ({
+    role: m.role,
+    content: m.content,
+  }));
 
       const { reply, action } = await sendChatMessage(msg, transactions, balances, history);
 

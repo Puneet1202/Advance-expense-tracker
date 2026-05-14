@@ -177,11 +177,12 @@ export const updateSettings = async (c) => {
 };
 
 // ─── POST /api/tracker/transaction ────────────────────────────────────────────
+// ─── POST /api/tracker/transaction ────────────────────────────────────────────
 export const addTransaction = async (c) => {
     try {
         const user = c.get('user');
         const supabase = getSupabaseClient(c.env);
-        let { type, amount, description, account_id } = await c.req.json();
+        let { type, amount, description, account_id, category } = await c.req.json();
 
         if (!amount || !type || !account_id) {
             return c.json({ message: "Amount, Type and Account are required", status: 400 }, 400);
@@ -197,7 +198,6 @@ export const addTransaction = async (c) => {
 
         // Expense ke liye balance check
         if (type === 'expense' && account_id) {
-            // WHY: D1 JOIN nahi karte the balance ke liye — Supabase mein bhi alag query safe hai
             const { data: txns, error: txnErr } = await supabase
                 .from('transactions')
                 .select('type, amount')
@@ -220,18 +220,48 @@ export const addTransaction = async (c) => {
             }
         }
 
-        // Transaction insert karo
-        const { error } = await supabase
+        // ✅ Category default set karo
+        const finalCategory = category || (type === 'income' ? 'Income' : 'General');
+
+        // Transaction insert karo aur ID wapas lo
+        const { data: inserted, error } = await supabase
             .from('transactions')
             .insert({
                 user_id: user.id,
                 type,
                 amount,
                 description,
+                category: finalCategory,      // ✅ category save hogi
                 account_id: account_id || null
-            });
+            })
+            .select('id')  // ✅ inserted ID wapas lo
+            .single();
 
         if (error) throw error;
+
+        // ✅ AI Engine ko call karo — background mein embedding banao
+        // Fire and forget — user ko wait nahi karna
+        try {
+            const aiEngineUrl = c.env?.AI_ENGINE_URL || 'http://localhost:8787';
+            fetch(`${aiEngineUrl}/api/admin/sync-one`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    transaction: {
+                        id: inserted.id,
+                        type,
+                        amount,
+                        description,
+                        category: finalCategory,
+                        user_id: user.id
+                    }
+                })
+            }).catch(err => console.error('[Embedding] Background sync failed:', err.message));
+        } catch (embedErr) {
+            console.error('[Embedding] Call failed:', embedErr.message);
+            // Embedding fail ho to bhi transaction save rahegi ✅
+        }
+
         return c.json({ message: "Transaction added", status: 200 }, 200);
 
     } catch (error) {

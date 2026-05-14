@@ -4,20 +4,32 @@ import { cors } from 'hono/cors';
 
 import authRouter from "./routers/auth.routes";
 import trackerRouter from "./routers/tracker.routes";
+import { startWatcher } from '../../ai-engine/src/cdc/watcher.js'
 
 const app = new Hono();
+
+let watcherStarted = false; // ✅ Sirf ek baar
+
 app.use(logger());
+
+app.use('*', async (c, next) => {
+  // ✅ Pehli request pe watcher start — env yahan milta hai
+  if (!watcherStarted) {
+    watcherStarted = true;
+    startWatcher(c.env);
+  }
+  await next();
+});
 
 // Enable CORS for frontend
 app.use('/api/*', cors({
   origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
-  credentials: true, // Allow cookies to be sent
+  credentials: true,
 }));
 
 app.get('/',(c)=>{
     return c.text("Welcome to Expense Tracker")
 })
-
 
 app.notFound((c)=>{
     return c.json({
@@ -34,12 +46,9 @@ app.onError((err,c)=>{
     },500)
 })
 
-
-
 app.route('/api/auth',authRouter);
 app.route('/api/tracker',trackerRouter);
 
-// Currency rates proxy — keeps API key server-side
 app.get('/api/currency/rates', async (c) => {
   try {
     const API_KEY = c.env.EXCHANGE_RATE_API_KEY;
@@ -52,6 +61,5 @@ app.get('/api/currency/rates', async (c) => {
     return c.json({ error: err.message }, 500);
   }
 });
-
 
 export default app;

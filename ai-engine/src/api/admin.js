@@ -20,7 +20,7 @@ adminRoute.get('/sync-all', async (c) => {
     
     // Fetch all expenses directly from Supabase
     const { data: results, error: fetchError } = await supabase
-      .from('expenses')
+      .from('transactions')
       .select('*');
 
     if (fetchError) throw fetchError;
@@ -46,7 +46,7 @@ adminRoute.get('/sync-all', async (c) => {
         }
 
         const { error: updateError } = await supabase
-          .from('expenses')
+          .from('transactions')
           .update({ embedding })
           .eq('id', t.id);
 
@@ -87,7 +87,7 @@ adminRoute.get('/embed-all', async (c) => {
 
     // 1. Supabase se lo jahan embedding IS NULL
     const { data: missingRecords, error: fetchError } = await supabase
-      .from('expenses')
+      .from('transactions')
       .select('*')
       .is('embedding', null);
 
@@ -110,7 +110,7 @@ adminRoute.get('/embed-all', async (c) => {
       if (embedding && Array.isArray(embedding)) {
         // 4. Supabase mein update karo
         const { error: updateError } = await supabase
-          .from('expenses')
+          .from('transactions')
           .update({ embedding })
           .eq('id', row.id);
 
@@ -145,7 +145,7 @@ adminRoute.get('/status', async (c) => {
     const supabase = getSupabaseClient(c.env);
     
     const { count, error } = await supabase
-      .from('expenses')
+      .from('transactions')
       .select('*', { count: 'exact', head: true });
       
     if (error) throw error;
@@ -165,5 +165,92 @@ adminRoute.get('/status', async (c) => {
     return c.json({ error: error.message }, 500);
   }
 });
+
+
+
+
+// ✅ NAYA ROUTE — ek transaction ki embedding banao
+adminRoute.post('/sync-one', async (c) => {
+  try {
+    const { transaction } = await c.req.json();
+    if (!transaction) return c.json({ error: "Transaction missing" }, 400);
+
+    const supabase = getSupabaseClient(c.env);
+    const category = transaction.category || 
+                     (transaction.type === 'income' ? 'Income' : 'General');
+
+    const textToEmbed = `Description: ${transaction.description}, Amount: ${transaction.amount}, Category: ${category}`;
+    const embedding = await getEmbeddings(textToEmbed, c.env);
+
+    if (!embedding) throw new Error("Embedding generate nahi hui");
+
+    const { error } = await supabase
+      .from('transactions')       // ✅ sahi table
+      .update({ embedding, category })
+      .eq('id', transaction.id)
+      .eq('user_id', transaction.user_id);
+
+    if (error) throw error;
+
+    console.log(`✅ [sync-one] Transaction ${transaction.id} embedded`);
+    return c.json({ done: true });
+
+  } catch (error) {
+    console.error("❌ sync-one failed:", error.message);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+
+// ✅ Import ke baad saari missing embeddings banao — ek user ke liye
+adminRoute.post('/sync-all-user', async (c) => {
+  try {
+    const { userId } = await c.req.json();
+    if (!userId) return c.json({ error: "userId missing" }, 400);
+
+    const supabase = getSupabaseClient(c.env);
+
+    // Sirf us user ki transactions jahan embedding null hai
+    const { data: missing, error: fetchError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .is('embedding', null);
+
+    if (fetchError) throw fetchError;
+
+    const total = missing?.length || 0;
+    if (total === 0) {
+      return c.json({ done: true, message: 'Sab embeddings already hain!' });
+    }
+
+    let successCount = 0;
+
+    for (const t of missing) {
+      const category = t.category || (t.type === 'income' ? 'Income' : 'General');
+      const textToEmbed = `Description: ${t.description || 'N/A'}, Amount: ${t.amount ?? 0}, Category: ${category}`;
+      const embedding = await getEmbeddings(textToEmbed, c.env);
+
+      if (embedding && Array.isArray(embedding)) {
+        const { error: updateError } = await supabase
+          .from('transactions')
+          .update({ embedding, category })
+          .eq('id', t.id);
+
+        if (!updateError) {
+          successCount++;
+          console.log(`✅ [sync-all-user] ${successCount}/${total} embedded`);
+        }
+      }
+    }
+
+    return c.json({ done: true, synced: successCount, total });
+
+  } catch (error) {
+    console.error("❌ sync-all-user failed:", error.message);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 
 export default adminRoute;

@@ -4,12 +4,15 @@ compatibility_date = "2024-09-23"
 compatibility_flags = [ "nodejs_compat" ]
 
 # Dev server port — AI Engine always 8788 par chalega
+
+
 [dev]
 port = 8788
-
-
 
 
 [ai]
 binding = "AI"
 remote = true
+
+[triggers]
+crons = ["*/1 * * * *"]

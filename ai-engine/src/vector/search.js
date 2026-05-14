@@ -1,27 +1,3 @@
-// FILE: ai-engine/src/vector/search.js
-// KAAM: Vector similarity search — user ke question se milti-julti transactions dhundta hai
-//
-// SECURITY FIX:
-//   Pehle match_expenses RPC mein user_id filter nahi tha
-//   Matlab: ek user ka question doosre user ki transactions match kar sakta tha (PRIVACY BUG!)
-//   Ab: filter_user_id parameter match_expenses function ko bhejte hain
-//   Supabase mein match_expenses function update karna hoga:
-//
-//   CREATE OR REPLACE FUNCTION match_expenses(
-//     query_embedding vector(768),
-//     match_threshold float,
-//     match_count int,
-//     filter_user_id bigint DEFAULT NULL  ← YE ADD KARO
-//   )
-//   RETURNS TABLE(id bigint, similarity float)
-//   LANGUAGE sql STABLE AS $$
-//     SELECT id, 1 - (embedding <=> query_embedding) AS similarity
-//     FROM transactions
-//     WHERE (filter_user_id IS NULL OR user_id = filter_user_id)  ← YE FILTER ADD KARO
-//       AND 1 - (embedding <=> query_embedding) > match_threshold
-//     ORDER BY embedding <=> query_embedding
-//     LIMIT match_count;
-//   $$;
 
 import { getSupabaseClient } from '../db/supabase.js';
 import { getEmbeddings } from '../ai/embedding.js';

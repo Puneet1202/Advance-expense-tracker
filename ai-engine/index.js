@@ -3,22 +3,22 @@ import { cors } from 'hono/cors'
 import { chatRoute } from './src/api/chat.js'
 import { importRoute } from './src/api/import.js'
 import adminRoute from './src/api/admin.js'
-
 import { startWatcher } from './src/cdc/watcher.js'
-
-// FILE: Main entry point for the AI engine
-// KAAM: Hono app setup and route registration
-// CONNECTS TO: src/api/admin.js, src/api/chat.js, src/api/import.js, src/cdc/watcher.js
-// CONFIG: ai-config.js se ENV setting leta hai (via routes)
 
 const app = new Hono()
 
-// NOTE: startWatcher() hataya gaya hai kyunki Cloudflare Workers 
-// global scope mein setInterval() allow nahi karta. Iske liye Cron trigger chahiye.
+let watcherStarted = false; // ✅ Sirf ek baar start ho
 
 // 1. Logging Middleware
 app.use('*', async (c, next) => {
   const start = Date.now();
+
+  // ✅ Pehli request pe watcher start karo — env yahan milta hai
+  if (!watcherStarted) {
+    watcherStarted = true;
+    startWatcher(c.env); // ✅ env pass ho raha hai
+  }
+
   console.log(`\n[${new Date().toLocaleTimeString()}] 📥 ${c.req.method} ${c.req.url}`);
   await next();
   console.log(`[${new Date().toLocaleTimeString()}] ✅ ${c.res.status} (${Date.now() - start}ms)`);
@@ -42,8 +42,8 @@ app.get('/', (c) => {
 
 // 4. Routes
 console.log("🛠️  Routes: /api/chat | /api/admin | /api/import");
-app.route('/api/chat', chatRoute)      // POST /api/chat/
-app.route('/api/admin', adminRoute)    // GET  /api/admin/sync-all
-app.route('/api/import', importRoute)  // /api/import/*
+app.route('/api/chat', chatRoute)
+app.route('/api/admin', adminRoute)
+app.route('/api/import', importRoute)
 
 export default app

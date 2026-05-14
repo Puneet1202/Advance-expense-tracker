@@ -1,18 +1,7 @@
 // FILE: backend/src/features/ai-chat/chat-handler.js
-// KAAM: System prompt banata hai (pre-calculated data ke saath) + AI Engine call karta hai
-//
-// SECURITY FIXES:
-//   1. PROMPT INJECTION: sanitizeInput() jailbreak patterns block karta hai
-//      Attacker "Ignore all instructions" type kare → BLOCKED
-//   2. INPUT LENGTH LIMIT: 2000 chars max — long injection payloads block hote hain
-//   3. DANGEROUS ACTIONS: Frontend mein confirmation step add ki hai (useAiChat.js)
-//      DELETE_TRANSACTION aur UNDO_LAST_ACTION ke liye user se confirm karo
 
 const AI_ENGINE_URL = 'http://localhost:8788';
 
-// ── Prompt Injection Protection ───────────────────────────────────────────────
-// WHY: LLM ko mislead karne ke common patterns block karne ke liye
-// Office AI ne bhi yahi issue bataya tha — ye patterns jailbreak attacks hain
 const INJECTION_PATTERNS = [
     /ignore\s+(all\s+|previous\s+|above\s+)?instructions?/i,
     /forget\s+(everything|all|your|previous)/i,
@@ -29,21 +18,19 @@ const INJECTION_PATTERNS = [
 
 function sanitizeInput(text) {
     if (!text || typeof text !== 'string') return '';
-    // Injection pattern mila to blocked message return karo
     for (const pattern of INJECTION_PATTERNS) {
         if (pattern.test(text)) {
             console.warn('[SECURITY] Prompt injection attempt blocked:', text.substring(0, 100));
             return '[SECURITY: Harmful input detected and blocked]';
         }
     }
-    // Max 2000 chars — long prompts mein hidden injection payloads block karo
     return text.slice(0, 2000);
 }
 
 function guessCategory(desc = '') {
   const d = desc.toLowerCase();
   if (/salary|stipend|payroll/.test(d)) return 'Salary';
-  if (/swiggy|zomato|restaurant|food|cafe|hotel|eat|meal|biryani|pizza|burger|blinkit|grocery/.test(d)) return 'Food';
+  if (/swiggy|zomato|restaurant|food|cafe|hotel|eat|meal|biryani|pizza|burger|blinkit|grocery|ice.?cream/.test(d)) return 'Food';
   if (/amazon|flipkart|myntra|meesho|shopping|mall|mart|store|shop/.test(d)) return 'Shopping';
   if (/petrol|diesel|fuel|hp|bpcl|iocl|shell|indian oil/.test(d)) return 'Fuel';
   if (/uber|ola|metro|bus|train|cab|auto|rapido|transport/.test(d)) return 'Transport';
@@ -54,26 +41,19 @@ function guessCategory(desc = '') {
 }
 
 function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHint) {
-  // Pre-calculate ALL numbers in JavaScript
   let totalIncome = 0;
   let totalExpense = 0;
   let currentMonthIncome = 0;
   let currentMonthExpense = 0;
   const categoryTotals = {};
 
-  // Get current year and month in YYYY-MM format
   const now = new Date();
   const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   transactions.forEach(t => {
-    // Ignore internal transfers so they don't artificially inflate total income/expense (MATCHES UI LOGIC)
-    if (t.description && t.description.includes('(Account Closing)')) {
-      return;
-    }
-
+    if (t.description && t.description.includes('(Account Closing)')) return;
     const cat = guessCategory(t.description);
     const isCurrentMonth = t.created_at && t.created_at.startsWith(currentMonthStr);
-
     if (t.type === 'expense') {
       totalExpense += t.amount;
       if (isCurrentMonth) currentMonthExpense += t.amount;
@@ -96,12 +76,8 @@ function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHin
     ? accounts.map(a => `- ${a.name}: ₹${a.balance}`).join('\n')
     : '- No accounts configured';
 
-  const accountNames = accounts.map(a => a.name).join(', ') || 'N/A';
-
   const totalAccountBalance = accounts.reduce((sum, a) => sum + Number(a.balance), 0);
 
-  // WHY: Top 5 by amount — AI ko sorted list do taaki "sabse bada kharch" jaisi queries accurate hon
-  // Pehle sirf last 5 tha (recent) — ab highest amount wale bhi hain
   const top5Expenses = [...transactions]
     .filter(t => t.type === 'expense' && !t.description?.includes('(Account Closing)'))
     .sort((a, b) => b.amount - a.amount)
@@ -116,9 +92,6 @@ function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHin
     .map(t => `- [${(t.created_at || '').split('T')[0].split(' ')[0] || 'N/A'}] ₹${t.amount} | ${t.description} | ${t.account_name || 'N/A'}`)
     .join('\n') || '- No income';
 
-  // WHY: Compact full history — last 50 transactions ek compact format mein
-  // Pehle sirf 5+5 tha — ab AI ko poori history milti hai
-  // Date|+/-Amount|Description format — token efficient hai
   const compactHistory = [...transactions]
     .slice(0, 50)
     .map(t => {
@@ -171,8 +144,6 @@ ${transactions.filter(t => t.type === 'expense').slice(0, 5).map(t =>
 ).join('\n') || '- No recent expenses'}
 
 === COMPLETE HISTORY (Last 50, format: Date|+/-Amount|Description) ===
-Note: Use this section to answer ANY history-based question like "sabse bada kharch",
-"kaun si entry ne amount minus kiya", "kab kya hua", "recent mein kya hua" etc.
 ${compactHistory}
 
 === STRICT RULES ===
@@ -181,104 +152,103 @@ ${compactHistory}
 3. For "income", "expense", "kitna kharch" — ALWAYS use Current Month values.
 4. For "balance" or "kitne paise hain" — ALWAYS use Account Balance.
 5. For "all time" or "lifetime" — use All-Time values.
+6.AMOUNT MANDATORY — Agar user ne is message mein CLEARLY amount nahi bataya to JSON BILKUL MAT BANAO. Pehle poocho: "Kitne ki [item] thi?" History se amount KABHI assume mat karo. Ye rule tod-na allowed nahi hai.
+7. Agar user ne message mein EXACT number nahi likha to amount HAMESHA poocho. Koi bhi item ho — assume mat karo.
+
+=== CRITICAL AMOUNT RULES ===
+⚠️ AMOUNT EXTRACTION — MOST IMPORTANT RULE:
+- User ne jo EXACT number likha hai WOHI use karo — koi multiplication, rounding, ya conversion MAT karo
+- "20 ki ice cream" → amount = 20 (EXACTLY 20, not 200, not 2000)
+- "500 ka petrol" → amount = 500
+- "1500 rent" → amount = 1500
+- Agar user ne sirf "20" likha hai to amount SIRF 20 hoga
+- KABHI BHI apni taraf se amount badalna ya ghatana mat — JO LIKHA HAI WO LO
 
 === APP ACTIONS LOGIC ===
 [Action: Add Transaction]
-If user asks to add an expense, you MUST do these validations BEFORE generating JSON:
-Step 1: Check the MATH & ACCOUNT FACTS. If an account is listed there, USE IT and do NOT ask for it. If not, and NO account is mentioned in chat history either, then ask: "Aapne kis account se pay kiya?". Do NOT output JSON.
-Step 2: Check the MATH FACT. If an exact INR amount is provided there, you MUST use that EXACT number.
-Step 3: You MUST determine the most logical category from this strict list: [Food, Shopping, Bills, Fuel, Transport, Salary, Transfer, Entertainment, Other]. For example, "movie" or "netflix" is Entertainment.
-Step 4: You MUST auto-correct any spelling mistakes in the user's description. If they say "subcription" or "netflx", fix it to "Netflix Subscription".
-Step 5: Reply ONLY with this exact JSON format. The "amount" MUST be a pure number in INR (e.g., 4565), NO currency symbols:
-{"action":"ADD_TRANSACTION","data":{"description":"Netflix Subscription","amount":4565,"type":"expense","account_name":"actual_account_name","category":"actual_category_from_list"}}
+If user asks to add an expense or income:
+Step 1: Check account. If mentioned in message or ACCOUNT FACT, use it directly. Else ask: "Aapne kis account se pay kiya?" — DO NOT output JSON yet.
+Step 2: AMOUNT — extract the EXACT number user wrote. "20 ki ice cream" = 20. "₹500" = 500. NO changes.
+Step 3: Category from list: [Food, Shopping, Bills, Fuel, Transport, Salary, Transfer, Entertainment, Other]
+Step 4: Auto-correct spelling in description only.
+Step 5: Output ONLY this JSON — no other text:
+{"action":"ADD_TRANSACTION","data":{"description":"Ice Cream","amount":20,"type":"expense","account_name":"cash","category":"Food"}}
 
 [Action: Delete Transaction]
-If the user asks to delete a specific transaction (e.g., "Delete dominos", "Movie wala kharcha hata do"):
-Step 1: Search the "RELEVANT SEARCHED TRANSACTIONS" context provided to you for the matching transaction to find its exact ID.
-Step 2: Reply ONLY with this exact JSON format and absolutely no other text:
-{"action":"DELETE_TRANSACTION","data":{"id":123,"description":"short name of what was deleted"}}
+If user asks to delete a transaction:
+Step 1: Find matching transaction ID from history.
+Step 2: Output ONLY:
+{"action":"DELETE_TRANSACTION","data":{"id":123,"description":"short name"}}
 
 [Action: Toggle Saving Mode]
-If the user asks to turn on/off saving mode or set a budget limit (e.g., "Saving mode chalu karo 5000 limit ke sath", "Budget band kar do"):
-Step 1: Reply ONLY with this exact JSON format and absolutely no other text:
 {"action":"TOGGLE_SAVING_MODE","data":{"status":true,"limit":5000}}
 
 [Action: Undo Last Action]
-If the user says they made a mistake and wants to revert/undo the last change (e.g., "Undo kar do", "Galti ho gayi wapas theek karo", "Pehle jaisa kar do"):
-Step 1: Reply ONLY with this exact JSON format and absolutely no other text:
 {"action":"UNDO_LAST_ACTION","data":{}}
 
 [Action: Change Theme]
-If the user asks to change the visual theme or mode (e.g., "dark mode on karo", "light mode laga do", "ankho me dard ho raha hai dark theme karo"):
-Step 1: Determine the requested theme ('dark' or 'light').
-Step 2: Reply ONLY with this exact JSON format and absolutely no other text:
 {"action":"CHANGE_THEME","data":{"theme":"dark"}}
 
 [Action: Change Currency]
-If the user asks to check currency rates or change the active currency (e.g., "Dollar ka rate dikhao", "Euro mein change karo"):
-Step 1: Pick the valid currency code (USD, EUR, GBP, AED, SAR, JPY, CAD, AUD, SGD, CHF, INR).
-Step 2: Reply ONLY with this exact JSON format and absolutely no other text:
 {"action":"CHANGE_CURRENCY","data":{"currency":"USD"}}
 
 [Action: Answer Question]
-If the user is ONLY asking a question about their data, balances, or history (e.g., "shopping kitne ki", "mera balance kya hai", "kis cheez me kitna kharch hua", "kya add kiya", "recent mein kya hua", "income kyun badhi"):
-Step 1: Do NOT output any JSON.
-Step 2: For questions about recent transactions, what was added, or history — use the RECENT TRANSACTIONS section above.
-Step 3: Read the PRE-CALCULATED FINANCIAL DATA, CATEGORY WISE EXPENSES, and ACCOUNT BALANCES for totals.
-Step 4: If the user asks for advice on saving money or cutting expenses, specifically name their highest expense categories and suggest reducing them.
-Step 5: Reply normally in short Hinglish.
+If user is asking a question — DO NOT output JSON. Answer in short Hinglish only.
 
-Example of a normal reply:
+Example:
 User: mera balance kya hai?
-AI: Aapka net balance ₹${net} hai.`;
+AI: Aapka balance ₹${totalAccountBalance.toFixed(2)} hai.`;
 }
 
 export async function handleChat(message, transactions, accounts, history, userId, usdRate = 83) {
-  // WHY: User input sanitize karo pehle — injection attacks block karo
   const safeMessage = sanitizeInput(message);
-  if (safeMessage !== message) {
-    // Injection mili — blocked message return karo directly
-    if (safeMessage.includes('[SECURITY:')) {
-      return { reply: '⚠️ Ye message process nahi ho sakta. Kripya normal sawal poochho.', action: null };
-    }
+  if (safeMessage.includes('[SECURITY:')) {
+    return { reply: '⚠️ Ye message process nahi ho sakta. Kripya normal sawal poochho.', action: null };
   }
-  // Pre-calculate USD conversions in JS to help LLM
+
+  // ✅ FIX 1: USD conversion hint — sirf USD/$ ke liye
   let mathHint = "";
-  // WHY: safeMessage use karo (sanitized) — original message mein injection ho sakti thi
   const match = safeMessage.match(/(\d+(?:\.\d+)?)\s*(?:usd|\$)/i) || safeMessage.match(/\$\s*(\d+(?:\.\d+)?)/i);
   if (match) {
     const usdAmount = parseFloat(match[1]);
     const inrAmount = Math.round(usdAmount * usdRate);
-    mathHint = `MATH FACT: The user mentioned $${usdAmount} USD. At the live rate of ${usdRate}, this is EXACTLY ₹${inrAmount} INR. You MUST use exactly ${inrAmount} as the amount in your JSON!`;
+    mathHint = `MATH FACT: User mentioned $${usdAmount} USD = EXACTLY ₹${inrAmount} INR at live rate. Use ${inrAmount} in JSON.`;
   }
-  
-  // Pre-extract account to help LLM
+
+  // Account hint
   let accountHint = "";
-  const lowerMessage = safeMessage.toLowerCase(); // WHY: sanitized input use karo
+  const lowerMessage = safeMessage.toLowerCase();
   for (const acc of accounts) {
     if (lowerMessage.includes(acc.name.toLowerCase())) {
-      accountHint = `ACCOUNT FACT: The user explicitly mentioned the account "${acc.name}". Do NOT ask them for the account again! Use "${acc.name}" in your JSON.`;
+      accountHint = `ACCOUNT FACT: User mentioned "${acc.name}" account. Use this directly, do NOT ask again.`;
       break;
     }
   }
 
   const systemPrompt = buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHint);
 
-  // Format history: keep more messages so AI doesn't forget context during long workflows
+  // ✅ FIX 2: History filter — JSON action responses history mein mat bhejo
+  // Ye loop ka main reason tha — AI apne pichle JSON actions dekh ke dobara action karta tha
   const normalizedHistory = (history || [])
-    .filter(h => h.role === 'user' || (h.role === 'assistant' && h.content && h.content.length < 150))
-    .slice(-10).map(h => ({
+    .filter(h => {
+      if (!h.content) return false;
+      // ✅ Assistant ke JSON action responses filter karo — loop prevent hoga
+      if (h.role === 'assistant' && h.content.includes('"action"')) return false;
+      // ✅ Bahut lambe messages bhi filter karo — confusion prevent hoga
+      if (h.content.length > 500) return false;
+      return true;
+    })
+    .slice(-6) // ✅ Sirf last 6 messages — kam context, kam confusion
+    .map(h => ({
       role: h.role === 'user' ? 'user' : 'assistant',
       content: h.content || ''
     }));
 
-  // Send everything to AI Engine
-  // WHY: safeMessage bhejo (sanitized) — injection attempt already block ho chuka hai
   const res = await fetch(`${AI_ENGINE_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      question: safeMessage,  // sanitized input
+      question: safeMessage,
       systemPrompt,
       history: normalizedHistory,
       userId: userId,
@@ -297,7 +267,6 @@ export async function handleChat(message, transactions, accounts, history, userI
   let action = null;
   let reply = rawText;
 
-  // Check if AI responded with any action JSON (greedy match for full object)
   const jsonMatch = rawText.match(/\{[\s\S]*"action"\s*:\s*"[A-Z_]+"[\s\S]*\}/);
   if (jsonMatch) {
     try {
