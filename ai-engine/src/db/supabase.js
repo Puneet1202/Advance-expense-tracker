@@ -10,8 +10,8 @@ import { createClient } from '@supabase/supabase-js';
 // Let's create a function that takes `env` and returns the client, or use global if available.
 
 export const getSupabaseClient = (env) => {
-    const supabaseUrl = env?.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = env?.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseUrl = env?.SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseKey = env?.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
     
     if (!supabaseUrl || !supabaseKey) {
         throw new Error("Supabase URL or Key is missing in environment variables.");
