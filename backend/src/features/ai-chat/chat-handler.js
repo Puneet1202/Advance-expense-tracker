@@ -88,9 +88,9 @@ function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHin
   const currentMonthNet = currentMonthIncome - currentMonthExpense;
 
   const categoryLines = Object.entries(categoryTotals)
-    .sort((a, b) => b[1] - a[1])  // Sabse bada kharcha upar rakho
-    .map(([cat, amt]) => `- ${cat}: ₹${amt}`)  // Har category ko ek line mein likho
-    .join('\n') || '- No expenses yet';  // Sabko ek ke niche ek chipka do
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, amt]) => `- ${cat}: ₹${amt}`)
+    .join('\n') || '- No expenses yet';
 
   const accountLines = accounts.length
     ? accounts.map(a => `- ${a.name}: ₹${a.balance}`).join('\n')
@@ -99,6 +99,34 @@ function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHin
   const accountNames = accounts.map(a => a.name).join(', ') || 'N/A';
 
   const totalAccountBalance = accounts.reduce((sum, a) => sum + Number(a.balance), 0);
+
+  // WHY: Top 5 by amount — AI ko sorted list do taaki "sabse bada kharch" jaisi queries accurate hon
+  // Pehle sirf last 5 tha (recent) — ab highest amount wale bhi hain
+  const top5Expenses = [...transactions]
+    .filter(t => t.type === 'expense' && !t.description?.includes('(Account Closing)'))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5)
+    .map(t => `- [${(t.created_at || '').split('T')[0].split(' ')[0] || 'N/A'}] ₹${t.amount} | ${t.description} | ${t.account_name || 'N/A'}`)
+    .join('\n') || '- No expenses';
+
+  const top5Income = [...transactions]
+    .filter(t => t.type === 'income' && !t.description?.includes('(Account Closing)'))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5)
+    .map(t => `- [${(t.created_at || '').split('T')[0].split(' ')[0] || 'N/A'}] ₹${t.amount} | ${t.description} | ${t.account_name || 'N/A'}`)
+    .join('\n') || '- No income';
+
+  // WHY: Compact full history — last 50 transactions ek compact format mein
+  // Pehle sirf 5+5 tha — ab AI ko poori history milti hai
+  // Date|+/-Amount|Description format — token efficient hai
+  const compactHistory = [...transactions]
+    .slice(0, 50)
+    .map(t => {
+      const d = (t.created_at || '').split('T')[0].split(' ')[0] || 'N/A';
+      const sign = t.type === 'income' ? '+' : '-';
+      return `${d}|${sign}₹${t.amount}|${t.description || 'N/A'}`;
+    })
+    .join('\n') || '- No history';
 
   return `You are a specialized expense tracker assistant.
 Your ONLY source of truth is the exact data provided below.
@@ -126,15 +154,26 @@ ${categoryLines}
 === ACCOUNT BALANCES ===
 ${accountLines}
 
+=== TOP 5 HIGHEST EXPENSES (Amount ke hisab se bade) ===
+${top5Expenses}
+
+=== TOP 5 HIGHEST INCOME (Amount ke hisab se bade) ===
+${top5Income}
+
 === RECENT INCOME (Last 5, newest first) ===
 ${transactions.filter(t => t.type === 'income').slice(0, 5).map(t =>
-  `- [${t.created_at ? t.created_at.split(' ')[0] : 'N/A'}] +₹${t.amount} | ${t.description} | Account: ${t.account_name || 'N/A'}`
+  `- [${t.created_at ? t.created_at.split('T')[0].split(' ')[0] : 'N/A'}] +₹${t.amount} | ${t.description} | Account: ${t.account_name || 'N/A'}`
 ).join('\n') || '- No recent income'}
 
 === RECENT EXPENSES (Last 5, newest first) ===
 ${transactions.filter(t => t.type === 'expense').slice(0, 5).map(t =>
-  `- [${t.created_at ? t.created_at.split(' ')[0] : 'N/A'}] -₹${t.amount} | ${t.description} | Account: ${t.account_name || 'N/A'}`
+  `- [${t.created_at ? t.created_at.split('T')[0].split(' ')[0] : 'N/A'}] -₹${t.amount} | ${t.description} | Account: ${t.account_name || 'N/A'}`
 ).join('\n') || '- No recent expenses'}
+
+=== COMPLETE HISTORY (Last 50, format: Date|+/-Amount|Description) ===
+Note: Use this section to answer ANY history-based question like "sabse bada kharch",
+"kaun si entry ne amount minus kiya", "kab kya hua", "recent mein kya hua" etc.
+${compactHistory}
 
 === STRICT RULES ===
 1. NEVER calculate — report exact numbers only.
