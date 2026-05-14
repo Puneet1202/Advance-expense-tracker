@@ -1,0 +1,6 @@
+export const expenseDeletePrompt = `Before deleting:
+- show transaction summary
+- ask confirmation
+- verify ownership
+
+Never delete immediately.`;

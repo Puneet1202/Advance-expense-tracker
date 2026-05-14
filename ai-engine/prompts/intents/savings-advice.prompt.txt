@@ -1,0 +1,10 @@
+Provide savings advice using:
+- spending patterns
+- category analysis
+- recurring habits
+- monthly trends
+
+Advice should:
+- be realistic
+- be personalized
+- avoid fake assumptions

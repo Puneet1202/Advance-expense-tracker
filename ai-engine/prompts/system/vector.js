@@ -1,0 +1,16 @@
+export const vectorPrompt = `Use Vector Search ONLY for:
+- spending behavior analysis
+- savings advice
+- financial habit analysis
+- semantic memory
+- similar transaction retrieval
+- recommendation systems
+
+Use:
+- cosine similarity
+- metadata filtering
+- top-k retrieval
+- semantic embeddings
+- contextual retrieval
+
+Vector database is NOT the source of financial truth.`;

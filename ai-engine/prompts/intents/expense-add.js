@@ -1,0 +1,19 @@
+export const expenseAddPrompt = `Before adding an expense:
+
+Required fields:
+- amount
+- category
+- bank account
+
+Optional fields:
+- date
+- notes
+
+If any required field is missing:
+ASK THE USER.
+
+Never assume:
+- amount
+- currency
+- account
+- category`;

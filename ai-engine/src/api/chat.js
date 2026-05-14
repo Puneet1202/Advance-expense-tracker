@@ -10,6 +10,8 @@ import { getChatResponse } from '../ai/chat.js'
 import { searchRelevantTransactions } from '../vector/search.js'
 import { getSupabaseClient } from '../db/supabase.js'
 import AI_CONFIG from '../../ai-config.js'
+import { composeDynamicPrompt } from '../../prompts/index.js'
+import { generateFinancialInsights } from '../ai/insights.js'
 
 
 
@@ -147,7 +149,8 @@ chatRoute.post('/', async (c) => {
     // Diagnostic object
     const diag = createDiagnostic(question);
 
-    let enrichedPrompt = systemPrompt || AI_CONFIG.prompts.expenseTracker;
+    let baseSystemPrompt = systemPrompt || AI_CONFIG.prompts.expenseTracker;
+    let enrichedPrompt = baseSystemPrompt;
     let contextText = '';
     let usedDB = false;
 
@@ -155,39 +158,46 @@ chatRoute.post('/', async (c) => {
       const supabase = getSupabaseClient(c.env);
       const lowerQ = question.toLowerCase();
 
-      // Smart Router
-      // const sqlKeywords = ["kitna", "total", "sum", "amount", "kitne", "kharcha", "mahine", "din", "income", "kya", "balance", "paise", "kamai", "bache", "ky", "add", "kro", "karo", "delete", "hata", "undo", "saving", "mode", "theme", "dark", "light", "currency"];
-      
-      // const needsExactMath = sqlKeywords.some(kw => lowerQ.includes(kw));
-      // ✅ Intent based — smart
-// const isActionIntent = /add|kro|karo|delete|hata|undo|remove|insert|save|spending|daalo|lagao|jodo/i.test(lowerQ);
-// const isMathIntent = /kitna|total|sum|balance|income|expense|paise|amount|kitne|kamai|kharcha/i.test(lowerQ);
+      // INTENT DETECTION RULES
+      // 1. Financial Action / Exact Math Intent -> SQL
+      // 2. Financial Insight Intent -> Vector + LLM
+      // 3. Mixed Intent -> Hybrid System
+      const isActionOrExact = /add|delete|update|remove|insert|kitna|total|sum|balance|bache|paise|kharcha|spend|spent|show|amount|kamai|income/i.test(lowerQ);
+      const isInsight = /save|saving|overspend|habits|budget|pattern|suggest|compare|recommend|advice|insight|habit/i.test(lowerQ);
+      const isMixed = isActionOrExact && isInsight;
 
-// const needsExactMath = isMathIntent || isActionIntent;
-//       diag.route = needsExactMath ? 'SQL' : 'VECTOR';
-            const needsExactMath = true;
-          diag.route = 'SQL';
+      if (isMixed) {
+        diag.route = 'HYBRID';
+      } else if (isInsight) {
+        diag.route = 'VECTOR';
+      } else if (isActionOrExact) {
+        diag.route = 'SQL';
+      } else {
+        diag.route = 'CASUAL';
+      }
+
+      // Inject dynamically layered modular prompts based on detected intent
+      enrichedPrompt = `${baseSystemPrompt}\n\n${composeDynamicPrompt(diag.route)}`;
+
       // ── Check: Frontend ne data bheja? (Cache) ────────────────────────────
-      if (frontendTxns && Array.isArray(frontendTxns) && frontendTxns.length > 0) { //Jab aapka frontend (React app) API ko request bhejta hai, toh woh saath mein transactions ka pura array bhi bhej raha hai. Agar woh array mil jata hai, toh yeh backend Database (Supabase) ko touch hi nahi karta, balki usi data par math calculate karke AI ko bhej deta hai.
+      if (frontendTxns && Array.isArray(frontendTxns) && frontendTxns.length > 0) {
         diag.cache.hit = true;
         diag.cache.dataSource = 'frontend_cache';
         console.log(`\n💾 [Cache HIT] Frontend ne ${frontendTxns.length} transactions bheje — DB call skip!`);
       }
 
-      // ── SQL Route ─────────────────────────────────────────────────────────
-      if (needsExactMath) {
-        let sqlData = [];
+      let sqlData = [];
 
+      // ── SQL / Exact Data Logic (For SQL & HYBRID Routes) ──────────────────
+      if (diag.route === 'SQL' || diag.route === 'HYBRID') {
         if (diag.cache.hit) {
-          // Cache se use karo — DB call nahi
           sqlData = frontendTxns;
           diag.dataScanned.rowsFromDB = 0;
         } else {
-          // DB se fetch karo
           const dbStart = Date.now();
           const { data, error: sqlError } = await supabase
             .from('transactions')
-            .select('amount, category, description, type, created_at')
+            .select('id, amount, category, description, type, created_at')
             .eq('user_id', userId.toString());
           const dbTime = Date.now() - dbStart;
 
@@ -207,18 +217,77 @@ chatRoute.post('/', async (c) => {
           usedDB = true;
           const totalAmount = sqlData.reduce((sum, row) => sum + Number(row.amount), 0);
           const totalCount = sqlData.length;
+          
+          // Category-wise totals calculation for zero hallucination
+          const categoryTotals = {};
+          sqlData.forEach(row => {
+            const cat = row.category || 'Other';
+            categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(row.amount);
+          });
+          const catBreakdown = Object.entries(categoryTotals)
+            .map(([cat, amt]) => `${cat}: ₹${amt.toFixed(2)}`)
+            .join(', ');
+
           const recentDesc = sqlData.slice(0, 5)
             .map(r => `- ${r.description || 'N/A'}: ₹${r.amount} (${r.category || 'N/A'})`)
             .join('\n');
 
-          contextText += `\n[EXACT SQL RESULT]\nTotal Transaction Count: ${totalCount}\nAll-Time Total: ₹${totalAmount.toFixed(2)}\nRecent:\n${recentDesc}\n`;
+          const insightsObj = generateFinancialInsights(sqlData);
+          contextText += `\n[PROCESSED FINANCIAL INSIGHTS JSON]\n${JSON.stringify(insightsObj, null, 2)}\n
+[SMART COACHING INSTRUCTIONS & RESPONSE STYLE]
+- Keep responses SHORT (Max 3-5 lines unless asked for detail).
+- Keep responses HUMAN, friendly, conversational, and natural.
+- Avoid long paragraphs, over-explaining, or repeating raw numbers.
+- Give direct practical advice focusing on the MOST important insight only.
+- Sound like a smart assistant, not a financial textbook.
+- Use simple Hinglish (e.g. "Aap already kaafi achha save kar rahe ho 😄 Bas entertainment spending thodi kam karo to monthly aur ₹3-4k save ho sakte hain 👍").
+- Evaluate Health Grade (${insightsObj.financial_health}) & top category dominance (${insightsObj.top_spending_category}) to give personalized suggestions.
+\n[EXACT SQL RESULT]\nTotal Transaction Count: ${totalCount}\nAll-Time Total: ₹${totalAmount.toFixed(2)}\nCategory Breakdown: ${catBreakdown}\nRecent Transactions:\n${recentDesc}\n`;
 
           diag.dataScanned.rowsSentToAI = Math.min(5, totalCount);
           diag.dataScanned.bytesScanned = JSON.stringify(sqlData).length;
         }
       }
 
-      // ── Vector Route ──────────────────────────────────────────────────────
+      // ── Vector / Semantic Logic (For VECTOR & HYBRID Routes) ──────────────
+      if (diag.route === 'VECTOR' || diag.route === 'HYBRID') {
+        try {
+          const { relevantIDs, searchStats } = await searchRelevantTransactions(userId, question, c.env);
+          diag.vector = searchStats;
+          if (relevantIDs && relevantIDs.length > 0) {
+            // Retrieve full rows for relevant vector matches
+            let sourceList = sqlData.length > 0 ? sqlData : (frontendTxns || []);
+            let matchedRows = sourceList.filter(t => relevantIDs.includes(t.id));
+
+            // Fetch from DB if missing from cache/sqlData
+            if (matchedRows.length === 0 && (!frontendTxns || frontendTxns.length === 0)) {
+              const dbStart = Date.now();
+              const { data: vData } = await supabase
+                .from('transactions')
+                .select('id, amount, category, description, type, created_at')
+                .in('id', relevantIDs);
+              const dbTime = Date.now() - dbStart;
+              diag.timing.dbTotal_ms += dbTime;
+              diag.dbCalls.push({
+                table: 'transactions',
+                operation: 'SELECT (Vector Details)',
+                rowsFound: vData?.length || 0,
+                time_ms: dbTime,
+                filter: `id in (${relevantIDs.join(',')})`
+              });
+              matchedRows = vData || [];
+            }
+
+            if (matchedRows.length > 0) {
+              usedDB = true;
+              const semanticDesc = matchedRows.map(t => `- ${t.description || 'N/A'}: ₹${t.amount} (${t.category || 'N/A'}, Date: ${new Date(t.created_at).toLocaleDateString()})`).join('\n');
+              contextText += `\n[SEMANTIC VECTOR SEARCH MATCHES (Similar past spending)]:\n${semanticDesc}\n`;
+            }
+          }
+        } catch (vecErr) {
+          console.error("Vector Search Error:", vecErr.message);
+        }
+      }
       
       if (contextText) {
         enrichedPrompt += `\n\nUser's Additional Database Context:\n${contextText}`;

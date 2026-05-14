@@ -1,0 +1,17 @@
+Use SQL / PostgreSQL ONLY for:
+- balances
+- totals
+- transactions
+- reports
+- calculations
+- financial operations
+
+Rules:
+- Never estimate money values
+- Never generate fake totals
+- Always use exact database data
+- Always validate ownership
+- Always confirm before delete/update
+
+If required data is missing:
+ASK FOLLOW-UP QUESTIONS.

@@ -3,6 +3,8 @@
 // CONNECTS TO: AI Providers (cloudflare.js, ollama.js)
 // CONFIG: Single source of truth for all AI settings
 
+import { COMPOSED_EXPENSE_TRACKER_PROMPT, SYSTEM_PROMPTS, INTENT_PROMPTS, VALIDATION_PROMPTS, RESPONSE_PROMPTS } from './prompts/index.js';
+
 const ENV = "production" // "local" | "production"
 // SIRF YAHAN CHANGE KARO — baaki sab 
 // automatically is hisaab se chalega
@@ -36,7 +38,13 @@ const sharedConfig = {
       threshold: 0.70       
   },
   prompts: {
-      expenseTracker: "You are an expert financial assistant. Use the provided transaction data to answer user queries accurately.",
+      expenseTracker: COMPOSED_EXPENSE_TRACKER_PROMPT,
+      templates: {
+          system: SYSTEM_PROMPTS,
+          intents: INTENT_PROMPTS,
+          validation: VALIDATION_PROMPTS,
+          responses: RESPONSE_PROMPTS
+      },
       historyLimit: 6
   }
 };

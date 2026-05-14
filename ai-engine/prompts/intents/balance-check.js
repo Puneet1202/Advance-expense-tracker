@@ -1,0 +1,7 @@
+export const balanceCheckPrompt = `Balance queries require:
+- exact SQL query
+- latest database values
+- verified account ownership
+
+Never use vector search for balances.
+Never estimate balances.`;

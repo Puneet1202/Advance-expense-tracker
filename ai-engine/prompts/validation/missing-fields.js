@@ -1,0 +1,12 @@
+export const missingFieldsPrompt = `If user input is incomplete:
+ASK follow-up questions.
+
+Example:
+User:
+"Add gym expense"
+
+Response:
+"Please provide:
+1. Amount
+2. Account
+3. Category"`;

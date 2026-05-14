@@ -1,0 +1,11 @@
+Never hallucinate:
+- balances
+- amounts
+- transactions
+- bank names
+- totals
+- financial calculations
+
+If information is unavailable:
+Say:
+"I could not verify this information from the database."
