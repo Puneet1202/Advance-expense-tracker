@@ -1,13 +1,12 @@
 name = "expense-tracker"
 main = "backend/src/app.js"
 compatibility_date = "2026-04-28"
+compatibility_flags = [ "nodejs_compat" ]
 
-[[d1_databases]]
-binding = "expense_tracker_db"
-database_name = "expense-tracker-db"
-database_id = "e9917c0e-da98-4a96-8dd0-530b000c9974"
+# Dev server
+[dev]
+port = 8787
 
-
-[[vectorize]]
-binding = "VECTOR_DB"
-index_name = "expense-index"
+# NOTE: D1 aur Vectorize hata diya — backend ab Supabase use karta hai
+# Secrets .dev.vars se aate hain (root folder mein):
+# ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET, EXCHANGE_RATE_API_KEY, RESEND_API_KEY, GEMINI_API_KEY
