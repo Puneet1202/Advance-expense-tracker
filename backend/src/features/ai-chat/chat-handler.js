@@ -84,7 +84,7 @@ ${mathHint ? `\n${mathHint}` : ""}
 
 === CRITICAL JSON ACTIONS LOGIC (UI Integration) ===
 If the user's intent is to perform an action (Add/Delete/Theme/Mode), output ONLY the corresponding single-line JSON object. Do NOT include markdown blocks, text, or explanations.
-If the user is just chatting or asking a QUESTION about past expenses (e.g. "how much did I spend on food?"), DO NOT try to add a transaction. Answer naturally in Hinglish using the context provided.
+If the user is just chatting or asking a QUESTION about past expenses or history (e.g. "how much did I spend on food?", "maine kahan kahan kharch kiya"), DO NOT try to add a transaction. DO NOT ask for amount. DO NOT output JSON. Just read the context and answer naturally in Hinglish.
 
 [Add Transaction]
 If adding an expense/income and all details are present (or if the user just typed "food 500 hdfc"):
@@ -140,7 +140,7 @@ export async function handleChat(message, transactions, accounts, history, userI
       if (h.content.length > 500) return false;
       return true;
     })
-    .slice(-6) // ✅ Sirf last 6 messages — kam context, kam confusion
+    .slice(-2) // ✅ Sirf last 2 messages (1 Q & 1 A) — kam context, zero confusion
     .map(h => ({
       role: h.role === 'user' ? 'user' : 'assistant',
       content: h.content || ''

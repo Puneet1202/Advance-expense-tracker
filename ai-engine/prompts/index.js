@@ -63,7 +63,8 @@ export function composeDynamicPrompt(intent = 'DEFAULT', customRules = '') {
         case 'SQL':
             layers.push('=== SQL EXACT TRUTH LAYER ===');
             layers.push(SYSTEM_PROMPTS.sql);
-            layers.push(INTENT_PROMPTS.balanceCheck);
+            layers.push(INTENT_PROMPTS.balanceCheck); 
+            layers.push(INTENT_PROMPTS.spendingAnalysis);  //  add this line 
             break;
         case 'VECTOR':
             layers.push('=== VECTOR SEMANTIC RETRIEVAL LAYER ===');
