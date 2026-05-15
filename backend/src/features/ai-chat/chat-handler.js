@@ -94,6 +94,7 @@ If adding an expense/income and all details are present (or if the user just typ
 
 [Delete Transaction]
 {"action":"DELETE_TRANSACTION","data":{"id":123,"description":"short name"}}
+* RULE: You MUST provide the exact numeric ID of the transaction from the history to delete it. If the transaction is NOT in the recent history context provided to you, DO NOT output JSON. Instead, tell the user you couldn't find it in the recent records.
 
 [Other Actions]
 {"action":"TOGGLE_SAVING_MODE","data":{"status":true,"limit":5000}}
