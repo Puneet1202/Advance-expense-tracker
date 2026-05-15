@@ -164,7 +164,7 @@ chatRoute.post('/', async (c) => {
       // 1. Financial Action / Exact Math Intent -> SQL
       // 2. Financial Insight Intent -> Vector + LLM
       // 3. Mixed Intent -> Hybrid System
-      const isActionOrExact = /add|delete|update|remove|insert|kitna|total|sum|balance|bache|paise|kharcha|kharch|khrch|khrrch|spend|spent|show|amount|kamai|income|kahan|kaha|history|purana|pichle|mahine|month|dikhao|batao|kal|aaj/i.test(lowerQ);
+      const isActionOrExact = /add|delete|update|remove|insert|kitna|total|sum|balance|bache|paise|kharcha|kharch|khrch|khrrch|spend|spent|show|amount|kamai|income|kahan|kaha|history|purana|pichle|mahine|month|dikhao|batao|kal|aaj|transaction|last|recent|provide|give|list/i.test(lowerQ);
       const isInsight = /save|saving|overspend|habits|budget|pattern|suggest|compare|recommend|advice|insight|habit/i.test(lowerQ);
       const isMixed = isActionOrExact && isInsight;
 
@@ -392,7 +392,7 @@ ${compactHistory}
 1. If the user reports an expense without an account name, ask them: "Kaunse account se?".
 2. For valid Add/Delete actions, output ONLY the JSON object.
 3. If the user asks for a specific date range (like "last month") that is missing from the data, say "Mere paas pichle mahine ka data nahi hai."
-4. Keep answers short (1-3 sentences) and conversational. You can use bullet points for lists.
+4. Keep answers short (1-3 sentences). If the user asks for a list, use clean bullet points (e.g. "- [Date] Item: ₹Amount"). DO NOT show raw [ID: xx] or raw database formatting!
 5. Always provide a helpful text response if you are not outputting a JSON action.
 6. DO NOT invent fake numbers or amounts (like "save 3-4k"). Only use numbers from the database context!`;
 
