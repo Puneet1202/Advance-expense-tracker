@@ -190,7 +190,8 @@ chatRoute.post('/', async (c) => {
 
       // ── SQL / Exact Data Logic (For SQL & HYBRID Routes) ──────────────────
       if (diag.route === 'SQL' || diag.route === 'HYBRID') {
-        if (diag.cache.hit) {
+        if (frontendTxns && Array.isArray(frontendTxns) && frontendTxns.length > 0) {
+          diag.cache.hit = true;
           sqlData = frontendTxns;
           diag.dataScanned.rowsFromDB = 0;
         } else {
@@ -198,7 +199,8 @@ chatRoute.post('/', async (c) => {
           const { data, error: sqlError } = await supabase
             .from('transactions')
             .select('id, amount, category, description, type, created_at')
-            .eq('user_id', userId.toString());
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
           const dbTime = Date.now() - dbStart;
 
           diag.dbCalls.push({
@@ -218,19 +220,41 @@ chatRoute.post('/', async (c) => {
           const totalAmount = sqlData.reduce((sum, row) => sum + Number(row.amount), 0);
           const totalCount = sqlData.length;
           
+          const now = new Date();
+          const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+          
           // Category-wise totals calculation for zero hallucination
-          const categoryTotals = {};
+          const allTimeCategoryTotals = {};
+          const currentMonthCategoryTotals = {};
+          
           sqlData.forEach(row => {
+            if (row.type !== 'expense') return; // Only track expenses for category breakdown
             const cat = row.category || 'Other';
-            categoryTotals[cat] = (categoryTotals[cat] || 0) + Number(row.amount);
+            allTimeCategoryTotals[cat] = (allTimeCategoryTotals[cat] || 0) + Number(row.amount);
+            
+            const isCurrentMonth = row.created_at && row.created_at.startsWith(currentMonthStr);
+            if (isCurrentMonth) {
+               currentMonthCategoryTotals[cat] = (currentMonthCategoryTotals[cat] || 0) + Number(row.amount);
+            }
           });
-          const catBreakdown = Object.entries(categoryTotals)
-            .map(([cat, amt]) => `${cat}: ₹${amt.toFixed(2)}`)
-            .join(', ');
+          
+          const allTimeCatBreakdown = Object.entries(allTimeCategoryTotals)
+            .map(([cat, amt]) => `${cat}: ₹${amt.toFixed(2)}`).join(', ') || 'None';
+          const currentMonthCatBreakdown = Object.entries(currentMonthCategoryTotals)
+            .map(([cat, amt]) => `${cat}: ₹${amt.toFixed(2)}`).join(', ') || 'None';
 
-          const recentDesc = sqlData.slice(0, 5)
-            .map(r => `- ${r.description || 'N/A'}: ₹${r.amount} (${r.category || 'N/A'})`)
-            .join('\n');
+          const sortedData = [...sqlData].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          
+          const top5Expenses = [...sqlData]
+            .filter(t => t.type === 'expense')
+            .sort((a, b) => b.amount - a.amount)
+            .slice(0, 5)
+            .map(t => `- ₹${t.amount} | ${t.description || 'N/A'} (${t.category || 'N/A'})`)
+            .join('\n') || 'None';
+
+          const compactHistory = sortedData.slice(0, 20)
+            .map(r => `[ID: ${r.id}] ${r.created_at ? r.created_at.split('T')[0] : 'N/A'} | ${r.type==='income'?'+':'-'}₹${r.amount} | ${r.description || 'N/A'} (${r.category || 'N/A'})`)
+            .join('\n') || 'None';
 
           const insightsObj = generateFinancialInsights(sqlData);
           contextText += `\n[PROCESSED FINANCIAL INSIGHTS JSON]\n${JSON.stringify(insightsObj, null, 2)}\n
@@ -240,9 +264,21 @@ chatRoute.post('/', async (c) => {
 - Avoid long paragraphs, over-explaining, or repeating raw numbers.
 - Give direct practical advice focusing on the MOST important insight only.
 - Sound like a smart assistant, not a financial textbook.
-- Use simple Hinglish (e.g. "Aap already kaafi achha save kar rahe ho 😄 Bas entertainment spending thodi kam karo to monthly aur ₹3-4k save ho sakte hain 👍").
+- Use simple Hinglish.
 - Evaluate Health Grade (${insightsObj.financial_health}) & top category dominance (${insightsObj.top_spending_category}) to give personalized suggestions.
-\n[EXACT SQL RESULT]\nTotal Transaction Count: ${totalCount}\nAll-Time Total: ₹${totalAmount.toFixed(2)}\nCategory Breakdown: ${catBreakdown}\nRecent Transactions:\n${recentDesc}\n`;
+
+[EXACT SQL RESULT]
+Total Transaction Count: ${totalCount}
+All-Time Total: ₹${totalAmount.toFixed(2)}
+Current Month Expenses by Category: ${currentMonthCatBreakdown}
+All-Time Expenses by Category: ${allTimeCatBreakdown}
+
+=== TOP 5 HIGHEST EXPENSES (All Time) ===
+${top5Expenses}
+
+=== COMPLETE HISTORY (Last 20 transactions) ===
+${compactHistory}
+`;
 
           diag.dataScanned.rowsSentToAI = Math.min(5, totalCount);
           diag.dataScanned.bytesScanned = JSON.stringify(sqlData).length;

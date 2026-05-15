@@ -335,7 +335,7 @@ export default function AiChat({ trackerData, fetchTrackerData, onClose }) {
               Finance Assistant
             </p>
             <p style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.7)' }}>
-              Powered by Gemini
+              Powered by Llama 3 & Supabase
             </p>
           </div>
         </div>

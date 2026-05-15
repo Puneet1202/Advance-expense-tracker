@@ -32,7 +32,7 @@ export const aiChatHandler = async (c) => {
         // WHY accounts(name): account_name nikalna ke liye foreign key join
         const { data: txnData, error: txnErr } = await supabase
             .from('transactions')
-            .select('id, type, amount, description, created_at, account_id, accounts(name)')
+            .select('id, type, amount, category, description, created_at, account_id, accounts(name)')
             .eq('user_id', user.id)
             .eq('is_hidden', false) // WHY: D1 mein is_hidden = 0 tha → Supabase mein false
             .order('created_at', { ascending: false });

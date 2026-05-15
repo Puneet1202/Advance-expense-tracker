@@ -41,36 +41,23 @@ function guessCategory(desc = '') {
 }
 
 function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHint) {
-  let totalIncome = 0;
-  let totalExpense = 0;
   let currentMonthIncome = 0;
   let currentMonthExpense = 0;
-  const categoryTotals = {};
 
   const now = new Date();
   const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   transactions.forEach(t => {
     if (t.description && t.description.includes('(Account Closing)')) return;
-    const cat = guessCategory(t.description);
     const isCurrentMonth = t.created_at && t.created_at.startsWith(currentMonthStr);
-    if (t.type === 'expense') {
-      totalExpense += t.amount;
-      if (isCurrentMonth) currentMonthExpense += t.amount;
-      categoryTotals[cat] = (categoryTotals[cat] || 0) + t.amount;
-    } else if (t.type === 'income') {
-      totalIncome += t.amount;
-      if (isCurrentMonth) currentMonthIncome += t.amount;
+    if (t.type === 'expense' && isCurrentMonth) {
+      currentMonthExpense += t.amount;
+    } else if (t.type === 'income' && isCurrentMonth) {
+      currentMonthIncome += t.amount;
     }
   });
 
-  const net = totalIncome - totalExpense;
   const currentMonthNet = currentMonthIncome - currentMonthExpense;
-
-  const categoryLines = Object.entries(categoryTotals)
-    .sort((a, b) => b[1] - a[1])
-    .map(([cat, amt]) => `- ${cat}: ₹${amt}`)
-    .join('\n') || '- No expenses yet';
 
   const accountLines = accounts.length
     ? accounts.map(a => `- ${a.name}: ₹${a.balance}`).join('\n')
@@ -78,126 +65,41 @@ function buildSystemPrompt(transactions, accounts, usdRate, mathHint, accountHin
 
   const totalAccountBalance = accounts.reduce((sum, a) => sum + Number(a.balance), 0);
 
-  const top5Expenses = [...transactions]
-    .filter(t => t.type === 'expense' && !t.description?.includes('(Account Closing)'))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 5)
-    .map(t => `- [${(t.created_at || '').split('T')[0].split(' ')[0] || 'N/A'}] ₹${t.amount} | ${t.description} | ${t.account_name || 'N/A'}`)
-    .join('\n') || '- No expenses';
+  return `You are an intelligent expense tracker assistant.
+Here is the exact live account balance data. (More transaction details and vector insights are provided in the additional context below).
 
-  const top5Income = [...transactions]
-    .filter(t => t.type === 'income' && !t.description?.includes('(Account Closing)'))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 5)
-    .map(t => `- [${(t.created_at || '').split('T')[0].split(' ')[0] || 'N/A'}] ₹${t.amount} | ${t.description} | ${t.account_name || 'N/A'}`)
-    .join('\n') || '- No income';
-
-  const compactHistory = [...transactions]
-    .slice(0, 50)
-    .map(t => {
-      const d = (t.created_at || '').split('T')[0].split(' ')[0] || 'N/A';
-      const sign = t.type === 'income' ? '+' : '-';
-      return `${d}|${sign}₹${t.amount}|${t.description || 'N/A'}`;
-    })
-    .join('\n') || '- No history';
-
-  return `You are a specialized expense tracker assistant.
-Your ONLY source of truth is the exact data provided below.
-
-=== PRE-CALCULATED FINANCIAL DATA ===
-NOTE: Use "Current Month" values by DEFAULT unless user asks for "all time" or "lifetime".
-
-Account Balance (Available Money): ₹${totalAccountBalance.toFixed(2)}
-Income this month (${currentMonthStr}): ₹${currentMonthIncome.toFixed(2)}
-Expense this month (${currentMonthStr}): ₹${currentMonthExpense.toFixed(2)}
-Net this month: ₹${currentMonthNet.toFixed(2)}
-
-All-Time Income (only if user says "all time"): ₹${totalIncome.toFixed(2)}
-All-Time Expense (only if user says "all time"): ₹${totalExpense.toFixed(2)}
-
-Live USD Rate: $1 = ₹${usdRate}
-
-=== MATH & ACCOUNT HINTS ===
-${accountHint || ""}
-${mathHint || ""}
-
-=== CATEGORY WISE EXPENSES (All-Time) ===
-${categoryLines}
-
-=== ACCOUNT BALANCES ===
+=== LIVE ACCOUNT BALANCES (Source of Truth) ===
+Total Available Bank Balance: ₹${totalAccountBalance.toFixed(2)}
+Individual Accounts:
 ${accountLines}
 
-=== TOP 5 HIGHEST EXPENSES (Amount ke hisab se bade) ===
-${top5Expenses}
+=== CURRENT MONTH TOTALS (${currentMonthStr}) ===
+Income: ₹${currentMonthIncome.toFixed(2)}
+Expense: ₹${currentMonthExpense.toFixed(2)}
+Net Savings: ₹${currentMonthNet.toFixed(2)}
 
-=== TOP 5 HIGHEST INCOME (Amount ke hisab se bade) ===
-${top5Income}
+Live USD Rate: $1 = ₹${usdRate}
+${accountHint ? `\n${accountHint}` : ""}
+${mathHint ? `\n${mathHint}` : ""}
 
-=== RECENT INCOME (Last 5, newest first) ===
-${transactions.filter(t => t.type === 'income').slice(0, 5).map(t =>
-  `- [${t.created_at ? t.created_at.split('T')[0].split(' ')[0] : 'N/A'}] +₹${t.amount} | ${t.description} | Account: ${t.account_name || 'N/A'}`
-).join('\n') || '- No recent income'}
+=== CRITICAL JSON ACTIONS LOGIC (UI Integration) ===
+If the user's intent is to perform an action (Add/Delete/Theme/Mode), output ONLY the corresponding single-line JSON object. Do NOT include markdown blocks, text, or explanations.
+If the user is just chatting or asking a QUESTION about past expenses (e.g. "how much did I spend on food?"), DO NOT try to add a transaction. Answer naturally in Hinglish using the context provided.
 
-=== RECENT EXPENSES (Last 5, newest first) ===
-${transactions.filter(t => t.type === 'expense').slice(0, 5).map(t =>
-  `- [${t.created_at ? t.created_at.split('T')[0].split(' ')[0] : 'N/A'}] -₹${t.amount} | ${t.description} | Account: ${t.account_name || 'N/A'}`
-).join('\n') || '- No recent expenses'}
+[Add Transaction]
+If adding an expense/income and all details are present (or if the user just typed "food 500 hdfc"):
+{"action":"ADD_TRANSACTION","data":{"description":"Item Name","amount":100,"type":"expense","account_name":"hdfc","category":"Food"}}
+* RULE: You MUST have exactly 3 things to output JSON: Amount, Item Name, and Account. Use ANY item name mentioned as Description. 
+* CRITICAL: If the user DOES NOT mention an account (like hdfc, sbi, or cash), DO NOT OUTPUT JSON. Ask them "Kaunse account se?". NEVER default to cash.
 
-=== COMPLETE HISTORY (Last 50, format: Date|+/-Amount|Description) ===
-${compactHistory}
-
-=== STRICT RULES ===
-1. NEVER calculate — report exact numbers only.
-2. Answer in Hinglish (Roman Hindi), 1-2 lines max.
-3. For "income", "expense", "kitna kharch" — ALWAYS use Current Month values.
-4. For "balance" or "kitne paise hain" — ALWAYS use Account Balance.
-5. For "all time" or "lifetime" — use All-Time values.
-6.AMOUNT MANDATORY — Agar user ne is message mein CLEARLY amount nahi bataya to JSON BILKUL MAT BANAO. Pehle poocho: "Kitne ki [item] thi?" History se amount KABHI assume mat karo. Ye rule tod-na allowed nahi hai.
-7. Agar user ne message mein EXACT number nahi likha to amount HAMESHA poocho. Koi bhi item ho — assume mat karo.
-
-=== CRITICAL AMOUNT RULES ===
-⚠️ AMOUNT EXTRACTION — MOST IMPORTANT RULE:
-- User ne jo EXACT number likha hai WOHI use karo — koi multiplication, rounding, ya conversion MAT karo
-- "20 ki ice cream" → amount = 20 (EXACTLY 20, not 200, not 2000)
-- "500 ka petrol" → amount = 500
-- "1500 rent" → amount = 1500
-- Agar user ne sirf "20" likha hai to amount SIRF 20 hoga
-- KABHI BHI apni taraf se amount badalna ya ghatana mat — JO LIKHA HAI WO LO
-
-=== APP ACTIONS LOGIC ===
-[Action: Add Transaction]
-If user asks to add an expense or income:
-Step 1: Check account. If mentioned in message or ACCOUNT FACT, use it directly. Else ask: "Aapne kis account se pay kiya?" — DO NOT output JSON yet.
-Step 2: AMOUNT — extract the EXACT number user wrote. "20 ki ice cream" = 20. "₹500" = 500. NO changes.
-Step 3: Category from list: [Food, Shopping, Bills, Fuel, Transport, Salary, Transfer, Entertainment, Other]
-Step 4: Auto-correct spelling in description only.
-Step 5: Output ONLY this JSON — no other text:
-{"action":"ADD_TRANSACTION","data":{"description":"Ice Cream","amount":20,"type":"expense","account_name":"cash","category":"Food"}}
-
-[Action: Delete Transaction]
-If user asks to delete a transaction:
-Step 1: Find matching transaction ID from history.
-Step 2: Output ONLY:
+[Delete Transaction]
 {"action":"DELETE_TRANSACTION","data":{"id":123,"description":"short name"}}
 
-[Action: Toggle Saving Mode]
+[Other Actions]
 {"action":"TOGGLE_SAVING_MODE","data":{"status":true,"limit":5000}}
-
-[Action: Undo Last Action]
 {"action":"UNDO_LAST_ACTION","data":{}}
-
-[Action: Change Theme]
 {"action":"CHANGE_THEME","data":{"theme":"dark"}}
-
-[Action: Change Currency]
-{"action":"CHANGE_CURRENCY","data":{"currency":"USD"}}
-
-[Action: Answer Question]
-If user is asking a question — DO NOT output JSON. Answer in short Hinglish only.
-
-Example:
-User: mera balance kya hai?
-AI: Aapka balance ₹${totalAccountBalance.toFixed(2)} hai.`;
+{"action":"CHANGE_CURRENCY","data":{"currency":"USD"}}`;
 }
 
 export async function handleChat(message, transactions, accounts, history, userId, usdRate = 83) {
@@ -275,5 +177,5 @@ export async function handleChat(message, transactions, accounts, history, userI
     } catch (e) { /* ignore */ }
   }
 
-  return { reply, action };
+  return { reply, action, diagnostics: data?.diagnostics };
 }

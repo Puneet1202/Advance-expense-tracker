@@ -15,6 +15,8 @@ export const CATEGORY_CONFIG = {
   Salary:    { emoji: '💰', color: '#22c55e', bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.3)',  label: 'Salary'    },
   Transfer:  { emoji: '🔄', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.3)', label: 'Transfer'  },
   Entertainment: { emoji: '🎬', color: '#ec4899', bg: 'rgba(236,72,153,0.12)', border: 'rgba(236,72,153,0.3)', label: 'Entertainment' },
+  Fitness:   { emoji: '💪', color: '#f43f5e', bg: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.3)', label: 'Fitness' },
+  Health:    { emoji: '⚕️', color: '#06b6d4', bg: 'rgba(6,182,212,0.12)', border: 'rgba(6,182,212,0.3)', label: 'Health' },
   Other:     { emoji: '📦', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.3)', label: 'Other'     },
 };
 
@@ -23,6 +25,11 @@ export const CATEGORY_CONFIG = {
  * Ya transaction description mein category keyword dhundta hai
  */
 export function guessCategory(t) {
+  // Use DB category if it exists and is meaningful
+  if (t.category && t.category !== 'General' && t.category !== 'Other') {
+    return t.category.charAt(0).toUpperCase() + t.category.slice(1).toLowerCase();
+  }
+
   // Pehle agar description mein koi known category ka naam hai
   const desc = (t.description || '').toLowerCase();
 

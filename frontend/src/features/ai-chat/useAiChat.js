@@ -147,6 +147,7 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
         amount:      Math.abs(Number(amount)),
         description: description || 'AI Added',
         account_id:  account.id,
+        category:    action.data.category,
       });
 
       addMsg('assistant',
@@ -175,9 +176,8 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
     try {
       const history = messages
   .filter(m => {
-    if (m.isAction) return false;  // ✅ YE IMPORTANT HAI
+    // Let the AI see the transaction success messages so it knows it completed the task!
     if (m.content?.includes('"action"')) return false;
-    if (m.content?.includes('✅ Transaction add ho gaya')) return false; // ✅ ADD KARO
     if (m.content?.length > 300) return false;
     return true;
   })
@@ -187,7 +187,11 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
     content: m.content,
   }));
 
-      const { reply, action } = await sendChatMessage(msg, transactions, balances, history);
+      const { reply, action, diagnostics } = await sendChatMessage(msg, transactions, balances, history);
+      
+      if (diagnostics) {
+        console.log(`🤖 [AI Route]: ${diagnostics.route} | ⚡ [Cache Hit]: ${diagnostics.cacheHit} | 📊 [Tokens]: ${diagnostics.tokenEstimate?.total || 'N/A'}`);
+      }
 
       if (action) {
         await executeAction(action);
