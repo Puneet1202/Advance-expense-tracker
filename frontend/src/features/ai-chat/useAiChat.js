@@ -190,7 +190,36 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
       const { reply, action, diagnostics } = await sendChatMessage(msg, transactions, balances, history);
       
       if (diagnostics) {
-        console.log(`🤖 [AI Route]: ${diagnostics.route} | ⚡ [Cache Hit]: ${diagnostics.cacheHit} | 📊 [Tokens]: ${diagnostics.tokenEstimate?.total || 'N/A'}`);
+        console.groupCollapsed(`🔍 AI Diagnostics Report: ${diagnostics.route} Route`);
+        console.log(`🗺️ Route Chosen: ${diagnostics.route === 'SQL' ? '📊 SQL (Exact Math/Action)' : diagnostics.route === 'VECTOR' ? '🧠 VECTOR (Semantic Search)' : '🔄 HYBRID'}`);
+        console.log(`📦 Data Source: ${diagnostics.cacheHit ? '✅ Frontend Cache (No DB call!)' : '🔴 Fresh DB Call (Direct)'}`);
+        console.log(`🗄️ Database Scanned: ${diagnostics.rowsScanned || 0} rows sent to AI.`);
+        
+        if (diagnostics.vector && diagnostics.vector.totalScannedFromVectorize > 0) {
+          console.group('🎯 Vector Search Stats');
+          console.log(`Matches Found: ${diagnostics.vector.finalSelectedCount || 0}`);
+          if (diagnostics.vector.matchScores && diagnostics.vector.matchScores.length > 0) {
+            console.log(`Match Percentages:`, diagnostics.vector.matchScores.map(m => m.scorePercent + '%').join(', '));
+          }
+          console.groupEnd();
+        }
+
+        console.group('🪙 Token Estimate (1 token ≈ 4 chars)');
+        console.log(`System Prompt: ~${diagnostics.tokenEstimate?.systemPrompt || 0} tokens`);
+        console.log(`DB Context: ~${diagnostics.tokenEstimate?.context || 0} tokens`);
+        console.log(`Question: ~${diagnostics.tokenEstimate?.question || 0} tokens`);
+        console.log(`AI Response: ~${diagnostics.tokenEstimate?.response || 0} tokens`);
+        console.log(`TOTAL: ~${diagnostics.tokenEstimate?.total || 0} tokens`);
+        console.log(`Cost Estimate: ~$${((diagnostics.tokenEstimate?.total || 0) * 0.000002).toFixed(6)}`);
+        console.groupEnd();
+        
+        console.group('⏱️ Timing Details');
+        console.log(`DB Queries: ${diagnostics.timing?.dbTotal_ms || 0}ms`);
+        console.log(`AI Response: ${diagnostics.timing?.aiResponse_ms || 0}ms`);
+        console.log(`Total Time: ${diagnostics.timing?.total_ms || 0}ms`);
+        console.groupEnd();
+
+        console.groupEnd();
       }
 
       if (action) {
