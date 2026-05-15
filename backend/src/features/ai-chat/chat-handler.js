@@ -91,6 +91,8 @@ If adding an expense/income and all details are present (or if the user just typ
 {"action":"ADD_TRANSACTION","data":{"description":"Item Name","amount":100,"type":"expense","account_name":"hdfc","category":"Food"}}
 * RULE: You MUST have exactly 3 things to output JSON: Amount, Item Name, and Account. Use ANY item name mentioned as Description. 
 * CRITICAL: If the user DOES NOT mention an account (like hdfc, sbi, or cash), DO NOT OUTPUT JSON. Ask them "Kaunse account se?". NEVER default to cash.
+* RULE: Pay attention to words like "received", "mila", "gift", "salary". If money comes IN, set "type" to "income". If money goes OUT (spent, paid), set "type" to "expense".
+* RULE: Choose a logical "category" (e.g., Food, Transport, Salary, Gift, General). Do NOT default to Transport!
 
 [Delete Transaction]
 {"action":"DELETE_TRANSACTION","data":{"id":123,"description":"short name"}}

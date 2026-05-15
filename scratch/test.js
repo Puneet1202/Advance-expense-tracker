@@ -6,8 +6,10 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 question: "What is my total all-time expense?",
-                systemPrompt: "You are an AI.",
-                userId: "test-123"
+                systemPrompt: "You are an AI financial assistant. Answer the question naturally.",
+                history: [],
+                userId: "test-123",
+                transactions: []
             })
         });
         const data = await res.json();

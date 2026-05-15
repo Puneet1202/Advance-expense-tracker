@@ -388,11 +388,13 @@ ${compactHistory}
     }
 
     // GLOBAL ENFORCEMENT RULES FOR ALL ROUTES
-    enrichedPrompt += `\n\n[CRITICAL FINAL RULES FOR ALL RESPONSES]
-1. If the user REPORTS A NEW EXPENSE OR INCOME but DOES NOT MENTION AN ACCOUNT (e.g. "I spent 800 on groceries"), YOU MUST NOT OUTPUT JSON and YOU MUST NOT GIVE ADVICE. Simply ask: "Kaunse account se?".
-2. If the user wants to ADD or DELETE a transaction and all details are present, YOU MUST OUTPUT ONLY THE JSON OBJECT. No text! No conversational filler!
-3. DO NOT create numbered lists. Keep text responses to 1-3 sentences max.
-4. DO NOT invent fake numbers or amounts (like "save 3-4k") unless they are mathematically derived from the database context.`;
+    enrichedPrompt += `\n\n[CRITICAL FINAL RULES]
+1. If the user reports an expense without an account name, ask them: "Kaunse account se?".
+2. For valid Add/Delete actions, output ONLY the JSON object.
+3. If the user asks for a specific date range (like "last month") that is missing from the data, say "Mere paas pichle mahine ka data nahi hai."
+4. Keep answers short (1-3 sentences) and conversational. You can use bullet points for lists.
+5. Always provide a helpful text response if you are not outputting a JSON action.
+6. DO NOT invent fake numbers or amounts (like "save 3-4k"). Only use numbers from the database context!`;
 
     // ── AI Call ───────────────────────────────────────────────────────────────
     console.log("👉 [ai-engine] Calling getChatResponse...");
