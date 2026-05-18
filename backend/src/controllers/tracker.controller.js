@@ -242,7 +242,7 @@ export const addTransaction = async (c) => {
         // ✅ AI Engine ko call karo — background mein embedding banao
         // Fire and forget — user ko wait nahi karna
         try {
-            const aiEngineUrl = c.env?.AI_ENGINE_URL || 'http://localhost:8787';
+            const aiEngineUrl = c.env?.AI_ENGINE_URL || 'http://localhost:8788';
             fetch(`${aiEngineUrl}/api/admin/sync-one`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

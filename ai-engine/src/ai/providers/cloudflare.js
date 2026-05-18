@@ -28,9 +28,14 @@ export const askCloudflareAI = async (systemPrompt, userQuestion, history = [], 
     }
 
     const response = await env.AI.run(AI_CONFIG.CF_MODEL.chat, {
-        messages: validMessages
+        messages: validMessages,
+        max_tokens: 1200
     });
-    return response.response;
+    const answer = response?.response?.trim();
+    if (!answer || answer.length < 2) {
+      return "Mujhe yeh samajh nahi aaya. Kripya dobara poochho.";
+    }
+    return answer;
 };
 
 export const getCloudflareEmbeddings = async (text, env = {}) => {

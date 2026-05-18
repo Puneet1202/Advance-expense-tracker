@@ -115,4 +115,4 @@ export function composeDynamicPrompt(intent = 'DEFAULT', customRules = '') {
 }
 
 // Default monolithic ready string export for generic workflows
-export const COMPOSED_EXPENSE_TRACKER_PROMPT = composeDynamicPrompt('HYBRID');
+export const COMPOSED_EXPENSE_TRACKER_PROMPT = composeDynamicPrompt('SQL');

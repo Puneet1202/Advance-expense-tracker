@@ -63,14 +63,20 @@ export async function searchRelevantTransactions(userId, question, env) {
 
     const searchStats = {
       query: question,
+      dimensions: queryVector.length,
       vectorDimension: queryVector.length,
-      totalScannedFromVectorize: matches.length,
+      matchesFound: matches.length,
+      threshold: AI_CONFIG.vectorConfig.threshold,
+      matches: matches.map(m => ({
+        id: m.id,
+        scorePercent: parseFloat((m.similarity * 100).toFixed(2)),
+      })),
       matchScores: matches.map(m => ({
         id: m.id,
         scorePercent: parseFloat((m.similarity * 100).toFixed(2)),
-        passedThreshold: true // Since our RPC handles the threshold
+        passedThreshold: true,
       })),
-      finalSelectedCount: filteredMatches.length
+      finalSelectedCount: filteredMatches.length,
     };
 
     return { relevantIDs: filteredMatches, searchStats };

@@ -10,8 +10,7 @@ import { getChatResponse } from '../ai/chat.js'
 import { searchRelevantTransactions } from '../vector/search.js'
 import { getSupabaseClient } from '../db/supabase.js'
 import AI_CONFIG from '../../ai-config.js'
-import { composeDynamicPrompt } from '../../prompts/index.js'
-import { generateFinancialInsights } from '../ai/insights.js'
+import { composeDynamicPrompt, SYSTEM_PROMPTS } from '../../prompts/index.js'
 
 
 
@@ -136,6 +135,16 @@ function logDiagnostic(diag, answer) {
   console.log(`╚${box}╝\n`);
 }
 
+const classifyIntent = (question) => {
+  const q = question.toLowerCase();
+  const isSql = /transaction|last|recent|history|balance|spent|spend|kitna|kharcha?|kharch|dikhao|show|list|provide|give|add|delete|income|expense|amount|total|bache|paise|kamai|kal|aaj|mahine|month|purana|pichle|food|category/.test(q);
+  const isVector = /advice|suggest|recommend|habit|pattern|savings?|budget|overspend|insight|analysis|compare|why|kyu|kyun|tips/.test(q);
+  if (isSql && isVector) return 'HYBRID';
+  if (isVector) return 'VECTOR';
+  if (isSql) return 'SQL';
+  return 'CASUAL';
+};
+
 // ── Main Chat Route ───────────────────────────────────────────────────────────
 chatRoute.post('/', async (c) => {
   const totalStart = Date.now();
@@ -151,32 +160,16 @@ chatRoute.post('/', async (c) => {
     // Diagnostic object
     const diag = createDiagnostic(question);
 
-    let baseSystemPrompt = systemPrompt || AI_CONFIG.prompts.expenseTracker;
+    let baseSystemPrompt = systemPrompt || SYSTEM_PROMPTS.core;
     let enrichedPrompt = baseSystemPrompt;
     let contextText = '';
     let usedDB = false;
 
     if (userId) {
       const supabase = getSupabaseClient(c.env);
-      const lowerQ = question.toLowerCase();
 
-      // INTENT DETECTION RULES
-      // 1. Financial Action / Exact Math Intent -> SQL
-      // 2. Financial Insight Intent -> Vector + LLM
-      // 3. Mixed Intent -> Hybrid System
-      const isActionOrExact = /add|delete|update|remove|insert|kitna|total|sum|balance|bache|paise|kharcha|kharch|khrch|khrrch|spend|spent|show|amount|kamai|income|kahan|kaha|history|purana|pichle|mahine|month|dikhao|batao|kal|aaj|transaction|last|recent|provide|give|list/i.test(lowerQ);
-      const isInsight = /save|saving|overspend|habits|budget|pattern|suggest|compare|recommend|advice|insight|habit/i.test(lowerQ);
-      const isMixed = isActionOrExact && isInsight;
-
-      if (isMixed) {
-        diag.route = 'HYBRID';
-      } else if (isInsight) {
-        diag.route = 'VECTOR';
-      } else if (isActionOrExact) {
-        diag.route = 'SQL';
-      } else {
-        diag.route = 'CASUAL';
-      }
+      const route = classifyIntent(question);
+      diag.route = route;
 
       // Inject dynamically layered modular prompts based on detected intent
       enrichedPrompt = `${baseSystemPrompt}\n\n${composeDynamicPrompt(diag.route)}`;
@@ -191,7 +184,7 @@ chatRoute.post('/', async (c) => {
       let sqlData = [];
 
       // ── SQL / Exact Data Logic (For SQL & HYBRID Routes) ──────────────────
-      if (diag.route === 'SQL' || diag.route === 'HYBRID') {
+      if (diag.route === 'SQL' || diag.route === 'HYBRID' || diag.route === 'VECTOR') {
         // ALWAYS hit DB for SQL to guarantee 100% accurate totals & correct 'accounts(name)' joins.
         // Frontend cache might be paginated or missing joined columns.
         console.log("👉 [ai-engine] Initiating Supabase Query...");
@@ -200,7 +193,9 @@ chatRoute.post('/', async (c) => {
           .from('transactions')
           .select('id, amount, category, description, type, created_at, account_id, accounts(name)')
           .eq('user_id', userId)
-          .order('created_at', { ascending: false });
+          .eq('is_hidden', false)
+          .order('created_at', { ascending: false })
+          .limit(50);
         console.log("👉 [ai-engine] Supabase Query Finished. Rows:", data?.length, "Error:", sqlError?.message);
         const dbTime = Date.now() - dbStart;
 
@@ -287,27 +282,23 @@ chatRoute.post('/', async (c) => {
             .map(([acc, items]) => `${acc}: ${items.join(', ')}`).join('\n'); 
 
 
-          const compactHistory = sortedData.slice(0, 20)
-            .map(r => `[ID: ${r.id}] ${r.created_at ? r.created_at.split('T')[0] : 'N/A'} | ${r.type==='income'?'+':'-'}₹${r.amount} | ${r.description || 'N/A'} (${r.category || 'N/A'})`)
+          const formatDate = (ts) => {
+            if (!ts) return 'N/A';
+            const s = String(ts);
+            return s.includes('T') ? s.split('T')[0] : s.substring(0, 10);
+          };
+
+          const latestTxn = sortedData[0];
+          const latestTxnLine = latestTxn
+            ? `📅 ${formatDate(latestTxn.created_at)} • ${latestTxn.description || 'N/A'} • ${latestTxn.type === 'income' ? '+' : '-'}₹${latestTxn.amount} • ${latestTxn.accounts?.name || latestTxn.category || 'N/A'}`
+            : 'None';
+          const compactHistory = sortedData.slice(0, 50)
+            .map((r, i) => `${i+1}. ${formatDate(r.created_at)} | ${r.type==='income'?'+':'-'}₹${r.amount} | ${r.description || 'N/A'} | ${r.accounts?.name || r.category || 'N/A'}`)
             .join('\n') || 'None';
 
-          const insightsObj = generateFinancialInsights(sqlData);
-          contextText += `\n[PROCESSED FINANCIAL INSIGHTS JSON]\n${JSON.stringify(insightsObj, null, 2)}\n
-[SMART COACHING INSTRUCTIONS & RESPONSE STYLE]
-- If you are outputting a JSON Action (Add/Delete/etc), IGNORE THESE STYLE RULES and ONLY OUTPUT JSON.
-- For questions: Keep responses SHORT (Max 3-5 lines unless asked for detail).
-- ONLY answer the USER's LATEST QUESTION.
-- If the user asks about an account that does not exist in the data (like "dbi"), simply state that the account doesn't exist. DO NOT invent data.
-- For questions: Keep responses HUMAN, friendly, conversational, and natural.
-- Avoid long paragraphs, over-explaining, or repeating raw numbers.
-- Give direct practical advice focusing on the MOST important insight only.
-- Sound like a smart assistant, not a financial textbook.
-- Use simple Hinglish.
-- Evaluate Health Grade (${insightsObj.financial_health}) & top category dominance (${insightsObj.top_spending_category}) to give personalized suggestions.
-
-[EXACT SQL RESULT]
+          contextText += `\n[EXACT SQL RESULT]
 Total Transaction Count: ${totalCount}
-All-Time Total Expense: ₹${allTimeExpense.toFixed(2)}
+All-Time Total Expense (last ${totalCount} transactions): ₹${allTimeExpense.toFixed(2)}
 All-Time Total Income: ₹${allTimeIncome.toFixed(2)}
 Current Month Expenses by Category: ${currentMonthCatBreakdown}
 All-Time Expenses by Category: ${allTimeCatBreakdown}
@@ -320,17 +311,16 @@ All-Time Expenses by Category: ${allTimeCatBreakdown}
 [TOTAL SPENT (EXPENSE) PER ACCOUNT]
 ${accountSpendingBreakdown}
 
-[DETAILED SPENDING BY ACCOUNT]
-${formattedAccountDetails}
-
 --- TOP 5 HIGHEST EXPENSES (All Time) ---
 ${top5Expenses}
 
-=== COMPLETE HISTORY (Last 20 transactions) ===
+[LATEST TRANSACTION — USE THIS FOR "last transaction" QUESTIONS]
+${latestTxnLine}
+=== COMPLETE HISTORY (Last 50 transactions, newest first) ===
 ${compactHistory}
 `;
 
-          diag.dataScanned.rowsSentToAI = Math.min(5, totalCount);
+          diag.dataScanned.rowsSentToAI = Math.min(50, totalCount);
           diag.dataScanned.bytesScanned = JSON.stringify(sqlData).length;
         }
       }
@@ -343,7 +333,8 @@ ${compactHistory}
           if (relevantIDs && relevantIDs.length > 0) {
             // Retrieve full rows for relevant vector matches
             let sourceList = sqlData.length > 0 ? sqlData : (frontendTxns || []);
-            let matchedRows = sourceList.filter(t => relevantIDs.includes(t.id));
+            const idSet = new Set(relevantIDs.map(String));
+            let matchedRows = sourceList.filter(t => idSet.has(String(t.id)));
 
             // Fetch from DB if missing from cache/sqlData
             if (matchedRows.length === 0 && (!frontendTxns || frontendTxns.length === 0)) {
@@ -388,13 +379,16 @@ ${compactHistory}
     }
 
     // GLOBAL ENFORCEMENT RULES FOR ALL ROUTES
-    enrichedPrompt += `\n\n[CRITICAL FINAL RULES]
-1. If the user reports an expense without an account name, ask them: "Kaunse account se?".
-2. For valid Add/Delete actions, output ONLY the JSON object.
-3. If the user asks for a specific date range (like "last month") that is missing from the data, say "Mere paas pichle mahine ka data nahi hai."
-4. Keep answers short (1-3 sentences). If the user asks for a list, use clean bullet points (e.g. "- [Date] Item: ₹Amount"). DO NOT show raw [ID: xx] or raw database formatting!
-5. Always provide a helpful text response if you are not outputting a JSON action.
-6. DO NOT invent fake numbers or amounts (like "save 3-4k"). Only use numbers from the database context!`;
+    enrichedPrompt += `\n\n[CRITICAL FINAL RULES - FOLLOW EXACTLY]
+1. Transaction add karna ho aur account missing ho toh SIRF itna pucho: "Kaunse account se?" — kuch aur mat likho.
+2. Valid Add/Delete action ke liye SIRF JSON output karo — koi text nahi.
+3. Transaction list dikhani ho toh SIRF is format mein dikho, koi extra text nahi:
+   📅 YYYY-MM-DD • Description • +/-₹Amount • Account
+4. Agar user ne number bataya (last 5, last 3) toh exactly utni hi dikho.
+5. Number nahi bataya toh last 5 dikho by default.
+6. KABHI BHI khaali response mat do — hamesha kuch na kuch likho.
+7. Balance pucha hai toh LIVE ACCOUNT BALANCES section se exact number lo.
+8. NEVER say "Kuch samajh nahi aaya" for financial questions — always try to answer.`;
 
     // ── AI Call ───────────────────────────────────────────────────────────────
     console.log("👉 [ai-engine] Calling getChatResponse...");
