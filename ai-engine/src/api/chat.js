@@ -137,12 +137,11 @@ function logDiagnostic(diag, answer) {
 
 const classifyIntent = (question) => {
   const q = question.toLowerCase();
-  const isSql = /transaction|last|recent|history|balance|spent|spend|kitna|kharcha?|kharch|dikhao|show|list|provide|give|add|delete|income|expense|amount|total|bache|paise|kamai|kal|aaj|mahine|month|purana|pichle|food|category/.test(q);
-  const isVector = /advice|suggest|recommend|habit|pattern|savings?|budget|overspend|insight|analysis|compare|why|kyu|kyun|tips/.test(q);
-  if (isSql && isVector) return 'HYBRID';
-  if (isVector) return 'VECTOR';
-  if (isSql) return 'SQL';
-  return 'CASUAL';
+  const isCasual = /^(hi|hello|hey|thanks|thank you|ok|okay|bye|shukriya|namaste|theek hai)$/i.test(q.trim());
+  const isPureAdvice = /^(saving tips|budget tips|investment tips|paisa bachane ke tips)$/i.test(q.trim());
+  if (isCasual) return 'CASUAL';
+  if (isPureAdvice) return 'VECTOR';
+  return 'SQL';
 };
 
 // ── Main Chat Route ───────────────────────────────────────────────────────────
@@ -171,8 +170,7 @@ chatRoute.post('/', async (c) => {
       const route = classifyIntent(question);
       diag.route = route;
 
-      // Inject dynamically layered modular prompts based on detected intent
-      enrichedPrompt = `${baseSystemPrompt}\n\n${composeDynamicPrompt(diag.route)}`;
+      enrichedPrompt = baseSystemPrompt;
 
       // ── Check: Frontend ne data bheja? (Cache) ────────────────────────────
       if (frontendTxns && Array.isArray(frontendTxns) && frontendTxns.length > 0) {
@@ -184,7 +182,7 @@ chatRoute.post('/', async (c) => {
       let sqlData = [];
 
       // ── SQL / Exact Data Logic (For SQL & HYBRID Routes) ──────────────────
-      if (diag.route === 'SQL' || diag.route === 'HYBRID' || diag.route === 'VECTOR') {
+      if (diag.route === 'SQL' || diag.route === 'VECTOR') {
         // ALWAYS hit DB for SQL to guarantee 100% accurate totals & correct 'accounts(name)' joins.
         // Frontend cache might be paginated or missing joined columns.
         console.log("👉 [ai-engine] Initiating Supabase Query...");
@@ -194,8 +192,7 @@ chatRoute.post('/', async (c) => {
           .select('id, amount, category, description, type, created_at, account_id, accounts(name)')
           .eq('user_id', userId)
           .eq('is_hidden', false)
-          .order('created_at', { ascending: false })
-          .limit(50);
+          .order('created_at', { ascending: false });
         console.log("👉 [ai-engine] Supabase Query Finished. Rows:", data?.length, "Error:", sqlError?.message);
         const dbTime = Date.now() - dbStart;
 
@@ -239,8 +236,13 @@ chatRoute.post('/', async (c) => {
           });
           
           const allTimeCatBreakdown = Object.entries(allTimeCategoryTotals)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 6)
             .map(([cat, amt]) => `${cat}: ₹${amt.toFixed(2)}`).join(', ') || 'None';
+
           const currentMonthCatBreakdown = Object.entries(currentMonthCategoryTotals)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 6)
             .map(([cat, amt]) => `${cat}: ₹${amt.toFixed(2)}`).join(', ') || 'None';
 
           const sortedData = [...sqlData].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -288,15 +290,22 @@ chatRoute.post('/', async (c) => {
             return s.includes('T') ? s.split('T')[0] : s.substring(0, 10);
           };
 
+          const recentFive = sortedData.slice(0, 5)
+            .map(r => `📅 ${formatDate(r.created_at)} • ${r.description || 'N/A'} • ${r.type === 'income' ? '+' : '-'}₹${r.amount} • ${r.accounts?.name || r.category || 'N/A'}`)
+            .join('\n') || 'None';
+
           const latestTxn = sortedData[0];
           const latestTxnLine = latestTxn
             ? `📅 ${formatDate(latestTxn.created_at)} • ${latestTxn.description || 'N/A'} • ${latestTxn.type === 'income' ? '+' : '-'}₹${latestTxn.amount} • ${latestTxn.accounts?.name || latestTxn.category || 'N/A'}`
             : 'None';
-          const compactHistory = sortedData.slice(0, 50)
+          const compactHistory = sortedData.slice(0, 5)
             .map((r, i) => `${i+1}. ${formatDate(r.created_at)} | ${r.type==='income'?'+':'-'}₹${r.amount} | ${r.description || 'N/A'} | ${r.accounts?.name || r.category || 'N/A'}`)
             .join('\n') || 'None';
 
           contextText += `\n[EXACT SQL RESULT]
+[RECENT 5 TRANSACTIONS - USE FOR "last transaction" or "recent" questions]
+${recentFive}
+
 Total Transaction Count: ${totalCount}
 All-Time Total Expense (last ${totalCount} transactions): ₹${allTimeExpense.toFixed(2)}
 All-Time Total Income: ₹${allTimeIncome.toFixed(2)}
@@ -326,7 +335,7 @@ ${compactHistory}
       }
 
       // ── Vector / Semantic Logic (For VECTOR & HYBRID Routes) ──────────────
-      if (diag.route === 'VECTOR' || diag.route === 'HYBRID') {
+      if (diag.route === 'VECTOR') {
         try {
           const { relevantIDs, searchStats } = await searchRelevantTransactions(userId, question, c.env);
           diag.vector = searchStats;
@@ -388,7 +397,8 @@ ${compactHistory}
 5. Number nahi bataya toh last 5 dikho by default.
 6. KABHI BHI khaali response mat do — hamesha kuch na kuch likho.
 7. Balance pucha hai toh LIVE ACCOUNT BALANCES section se exact number lo.
-8. NEVER say "Kuch samajh nahi aaya" for financial questions — always try to answer.`;
+8. NEVER say "Kuch samajh nahi aaya" for financial questions — always try to answer.
+9. NEVER repeat the same word multiple times. If you catch yourself repeating, stop and summarize instead.`;
 
     // ── AI Call ───────────────────────────────────────────────────────────────
     console.log("👉 [ai-engine] Calling getChatResponse...");
