@@ -57,6 +57,7 @@ export const aiChatHandler = async (c) => {
         const accounts = (accountsData || []).map(acc => {
             let balance = 0;
             transactions.forEach(t => {
+                if (t.description?.includes('(Account Closing)')) return;
                 if (t.account_id === acc.id) {
                     balance += t.type === 'income' ? t.amount : -t.amount;
                 }

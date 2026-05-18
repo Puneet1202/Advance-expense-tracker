@@ -24,7 +24,8 @@ const baseConfig = {
     CHAT_PROVIDER: "cloudflare",
     CF_MODEL: {
       embedding: "@cf/baai/bge-base-en-v1.5",
-      chat: "@cf/meta/llama-3-8b-instruct"
+      chat: "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+      
     }
   }
 }

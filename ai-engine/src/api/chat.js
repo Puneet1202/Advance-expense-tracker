@@ -10,7 +10,8 @@ import { getChatResponse } from '../ai/chat.js'
 import { searchRelevantTransactions } from '../vector/search.js'
 import { getSupabaseClient } from '../db/supabase.js'
 import AI_CONFIG from '../../ai-config.js'
-import { composeDynamicPrompt, SYSTEM_PROMPTS } from '../../prompts/index.js'
+import { SYSTEM_PROMPTS } from '../../prompts/index.js'
+import { casualChatPrompt } from '../../prompts/responses/casual-chat.js'
 
 
 
@@ -64,7 +65,8 @@ function logDiagnostic(diag, answer) {
 
   // Question
   console.log(`║  ❓ Question     : "${diag.question.substring(0, 60)}"`);
-  console.log(`║  🗺️  Route Chosen : ${diag.route === 'SQL' ? '📊 SQL (Exact Math)' : '🧠 VECTOR (Semantic Search)'}`);
+  const routeLabel = { CASUAL: '💬 Casual', SQL: '📊 Data/SQL', VECTOR: '🧠 Vector', ACTION: '⚡ Action' };
+  console.log(`║  🗺️  Route Chosen : ${routeLabel[diag.route] || diag.route}`);
   console.log(`║  📦 Data Source  : ${diag.cache.hit ? '✅ Frontend Cache (No DB call!)' : '🔴 Fresh DB Call'}`);
 
   // DB Calls
@@ -135,14 +137,136 @@ function logDiagnostic(diag, answer) {
   console.log(`╚${box}╝\n`);
 }
 
-const classifyIntent = (question) => {
-  const q = question.toLowerCase();
-  const isCasual = /^(hi|hello|hey|thanks|thank you|ok|okay|bye|shukriya|namaste|theek hai)$/i.test(q.trim());
-  const isPureAdvice = /^(saving tips|budget tips|investment tips|paisa bachane ke tips)$/i.test(q.trim());
-  if (isCasual) return 'CASUAL';
-  if (isPureAdvice) return 'VECTOR';
+function resolveRoute(question, intentFromBackend) {
+  const map = { casual: 'CASUAL', data: 'SQL', action: 'ACTION', vector: 'VECTOR' };
+  const key = String(intentFromBackend || '').toLowerCase();
+  if (map[key]) return map[key];
+
+  const q = String(question || '').toLowerCase().trim();
+  if (/^(hi|hello|hey|namaste|thanks?|thank\s*you|shukriya|ok|okay|bye|kaise\s*ho|theek\s*hai)\b/i.test(q)) return 'CASUAL';
+  if (/(saving|bachat|tips?|advice|suggest)/i.test(q) && !/(kitna|balance|dikhao|transaction)/i.test(q)) return 'VECTOR';
+  if (/\d{2,}/.test(q) && !/(tha|thi|dikhao|kitna|balance|history)/i.test(q) && /(daal|add|pay|spent|\w+\s+\d{2,}\s+\w+)/i.test(q)) return 'ACTION';
   return 'SQL';
-};
+}
+
+function extractListCount(question) {
+  const q = String(question || '').toLowerCase();
+  const m = q.match(/last\s*(\d+)|(\d+)\s*(?:recent|latest|transaction)|recent\s*(\d+)/i);
+  if (m) return Math.min(50, Math.max(1, parseInt(m[1] || m[2] || m[3], 10)));
+  if (/last|recent|latest|transaction\s*dikha/i.test(q)) return 3;
+  return 15;
+}
+
+/** Match DB/app convention (General) — not "Other", which splits totals incorrectly. */
+function normalizeCategory(raw) {
+  const s = raw != null ? String(raw).trim() : '';
+  if (!s) return 'General';
+  return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function isAccountClosing(row) {
+  return Boolean(row?.description && row.description.includes('(Account Closing)'));
+}
+
+/** One category per line so Food vs Entertainment cannot be merged when parsing. */
+function formatCategoryBreakdown(totalsMap) {
+  const entries = Object.entries(totalsMap).sort((a, b) => b[1] - a[1]);
+  if (!entries.length) return 'None';
+  return entries.map(([cat, amt]) => `- ${cat}: ₹${amt.toFixed(2)}`).join('\n');
+}
+
+function formatTxnLine(r, formatDate) {
+  const cat = normalizeCategory(r.category);
+  const acct = r.accounts?.name || 'N/A';
+  const sign = r.type === 'income' ? '+' : '-';
+  return `📅 ${formatDate(r.created_at)} • ${r.description || 'N/A'} • ${sign}₹${r.amount} • Category: ${cat} • Account: ${acct}`;
+}
+
+const SEARCH_STOP = new Set([
+  'kitna', 'kharcha', 'kiya', 'maine', 'mere', 'the', 'thi', 'tha', 'hua', 'gaya', 'diya',
+  'kya', 'pe', 'pr', 'par', 'mein', 'me', 'hai', 'ho', 'na', 'ki', 'ka', 'ke', 'ko', 'se',
+  'aur', 'is', 'mahine', 'month', 'wala', 'walaa', 'record', 'mujhe', 'apne', 'aapne',
+  'dikhao', 'dikha', 'batao', 'mila', 'nahi', 'khrcha', 'kharch', 'diye', 'diyi',
+]);
+
+/** Code search for "hotel tha na", "room booking aaj" — LLM list scan is unreliable. */
+function buildQuestionSearchBlock(question, expenseRows, formatDate) {
+  const q = String(question || '').toLowerCase();
+  if (
+    !/(tha|thi|kiya|booking|kharcha|kharch|kitna|order|mila|record|dikhao|batao|gaya|hua|wala|kata|charge|subscription|netflix|swiggy|amazon|sabse|bada|hafte|kharida|search|kro)/i.test(
+      q
+    )
+  ) {
+    return '';
+  }
+
+  const todayOnly = /\b(aaj|today)\b/i.test(q);
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const topicRules = [
+    { keys: ['hotel', 'room', 'oyo', 'stay', 'resort', 'booking'], cats: ['travel'] },
+    { keys: ['travel', 'flight', 'trip', 'irctc'], cats: ['travel'] },
+    { keys: ['food', 'swiggy', 'zomato', 'dinner', 'lunch', 'breakfast', 'meal', 'pizza', 'chai'], cats: ['food'] },
+    { keys: ['petrol', 'diesel', 'fuel', 'pump'], cats: ['fuel'] },
+    { keys: ['gym', 'fitness', 'workout', 'ym'], cats: ['fitness'] },
+    { keys: ['netflix', 'movie', 'spotify', 'prime', 'hotstar'], cats: ['entertainment'] },
+    { keys: ['salary', 'stipend', 'income'], cats: ['salary', 'income'] },
+    { keys: ['amazon', 'flipkart', 'shopping'], cats: ['shopping'] },
+  ];
+
+  let activeKeys = [];
+  let activeCats = [];
+  for (const rule of topicRules) {
+    if (rule.keys.some((k) => q.includes(k))) {
+      activeKeys = rule.keys;
+      activeCats = rule.cats;
+      break;
+    }
+  }
+  if (!activeKeys.length) {
+    activeKeys = q.split(/\s+/).filter((w) => w.length >= 3 && !SEARCH_STOP.has(w));
+  }
+  if (!activeKeys.length && !activeCats.length) return '';
+
+  const matches = expenseRows.filter((row) => {
+    if (todayOnly && row.created_at && !String(row.created_at).startsWith(todayStr)) return false;
+    const desc = (row.description || '').toLowerCase();
+    const cat = normalizeCategory(row.category).toLowerCase();
+    if (activeCats.some((c) => cat === c || cat.includes(c))) return true;
+    return activeKeys.some((k) => desc.includes(k) || cat.includes(k));
+  });
+
+  if (!matches.length) {
+    return `[SEARCH: "${question}" — koi matching transaction nahi mili]`;
+  }
+
+  let expenseSum = 0;
+  const lines = matches.slice(0, 15).map((r, i) => {
+    if (r.type === 'expense') expenseSum += Number(r.amount);
+    return `${i + 1}. ${formatTxnLine(r, formatDate)}`;
+  });
+
+  return `[SEARCH MATCHES — is sawal ka jawab SIRF yahan se do; account name yahan se lo]
+Rows: ${matches.length} | Expense total: ₹${expenseSum.toFixed(2)}
+${lines.join('\n')}`;
+}
+
+/** "sabse bada" / week — remind model: use system prompt sections, not recent list only */
+function buildQueryHint(question) {
+  const q = String(question || '').toLowerCase();
+  const listM = q.match(/last\s*(\d+)|(\d+)\s*(?:recent|latest|transaction)/i);
+  if (listM || /last.*transaction|transaction.*dikha/i.test(q)) {
+    const n = listM ? parseInt(listM[1] || listM[2], 10) : 3;
+    return `[HINT: User asked for EXACTLY ${n} transactions — show only ${n} rows from list below, NOT "last 7 days".]`;
+  }
+  if (/sabse\s*bada|biggest|highest|max\s*kharcha/i.test(q)) {
+    return '[HINT: Use TOP EXPENSES → Biggest single expense from system prompt. Do NOT use recent transaction list only.]';
+  }
+  if (/is\s*hafte|this\s*week|haft(e|ey)\s*mein/i.test(q)) {
+    return '[HINT: Use LAST 7 DAYS section from system prompt for this week purchases.]';
+  }
+  return '';
+}
 
 // ── Main Chat Route ───────────────────────────────────────────────────────────
 chatRoute.post('/', async (c) => {
@@ -152,37 +276,35 @@ chatRoute.post('/', async (c) => {
     console.log("👉 [ai-engine] Received /api/chat request!");
     const body = await c.req.json();
     console.log("👉 [ai-engine] JSON parsed successfully. Question:", body.question);
-    const { question, systemPrompt, history = [], userId, transactions: frontendTxns } = body;
+    const { question, systemPrompt, history = [], userId, intent: intentFromBackend, transactions: frontendTxns } = body;
 
     if (!question) return c.json({ error: "Question missing" }, 400);
 
-    // Diagnostic object
     const diag = createDiagnostic(question);
+    const route = resolveRoute(question, intentFromBackend);
+    diag.route = route;
 
-    let baseSystemPrompt = systemPrompt || SYSTEM_PROMPTS.core;
-    let enrichedPrompt = baseSystemPrompt;
+    let enrichedPrompt = systemPrompt || SYSTEM_PROMPTS.core;
     let contextText = '';
     let usedDB = false;
+    let finalHistory = history;
 
-    if (userId) {
+    // ── CASUAL: no DB, short prompt, keep chat history ─────────────────────
+    if (route === 'CASUAL') {
+      enrichedPrompt = `${enrichedPrompt}\n\n${casualChatPrompt}`;
+      finalHistory = (history || []).slice(-4);
+    } else if (userId) {
       const supabase = getSupabaseClient(c.env);
 
-      const route = classifyIntent(question);
-      diag.route = route;
-
-      enrichedPrompt = baseSystemPrompt;
-
-      // ── Check: Frontend ne data bheja? (Cache) ────────────────────────────
-      if (frontendTxns && Array.isArray(frontendTxns) && frontendTxns.length > 0) {
+      if (frontendTxns?.length > 0) {
         diag.cache.hit = true;
         diag.cache.dataSource = 'frontend_cache';
-        console.log(`\n💾 [Cache HIT] Frontend ne ${frontendTxns.length} transactions bheje — DB call skip!`);
       }
 
       let sqlData = [];
 
-      // ── SQL / Exact Data Logic (For SQL & HYBRID Routes) ──────────────────
-      if (diag.route === 'SQL' || diag.route === 'VECTOR') {
+      // ── DATA (SQL): transaction list only — totals live in backend system prompt ──
+      if (route === 'SQL') {
         // ALWAYS hit DB for SQL to guarantee 100% accurate totals & correct 'accounts(name)' joins.
         // Frontend cache might be paginated or missing joined columns.
         console.log("👉 [ai-engine] Initiating Supabase Query...");
@@ -209,133 +331,58 @@ chatRoute.post('/', async (c) => {
 
         if (sqlData.length > 0) {
           usedDB = true;
-          let allTimeIncome = 0;
-          let allTimeExpense = 0;
-          sqlData.forEach(row => {
-            if (row.type === 'expense') allTimeExpense += Number(row.amount);
-            if (row.type === 'income') allTimeIncome += Number(row.amount);
-          });
-          const totalCount = sqlData.length;
-          
-          const now = new Date();
-          const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-          
-          // Category-wise totals calculation for zero hallucination
-          const allTimeCategoryTotals = {};
-          const currentMonthCategoryTotals = {};
-          
-          sqlData.forEach(row => {
-            if (row.type !== 'expense') return; // Only track expenses for category breakdown
-            const cat = row.category || 'Other';
-            allTimeCategoryTotals[cat] = (allTimeCategoryTotals[cat] || 0) + Number(row.amount);
-            
-            const isCurrentMonth = row.created_at && row.created_at.startsWith(currentMonthStr);
-            if (isCurrentMonth) {
-               currentMonthCategoryTotals[cat] = (currentMonthCategoryTotals[cat] || 0) + Number(row.amount);
-            }
-          });
-          
-          const allTimeCatBreakdown = Object.entries(allTimeCategoryTotals)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 6)
-            .map(([cat, amt]) => `${cat}: ₹${amt.toFixed(2)}`).join(', ') || 'None';
-
-          const currentMonthCatBreakdown = Object.entries(currentMonthCategoryTotals)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 6)
-            .map(([cat, amt]) => `${cat}: ₹${amt.toFixed(2)}`).join(', ') || 'None';
-
-          const sortedData = [...sqlData].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-          
-          const top5Expenses = [...sqlData]
-            .filter(t => t.type === 'expense')
-            .sort((a, b) => b.amount - a.amount)
-            .slice(0, 5)
-            .map(t => `- ₹${t.amount} | ${t.description || 'N/A'} (${t.category || 'N/A'})`)
-            .join('\n') || 'None';
-
-
-          const spendingByAccount = {};
-          sqlData.forEach(row => {
-            if (row.type === 'expense') {
-              const acc = (row.accounts && row.accounts.name) ? row.accounts.name : (row.account_name || row.account_id || 'Unknown Account');
-              spendingByAccount[acc] = (spendingByAccount[acc] || 0) + Number(row.amount);
-            }
-          });
-
-          const accountSpendingBreakdown = Object.entries(spendingByAccount)
-            .map(([acc, amt]) => `${acc}: ₹${amt.toFixed(2)}`).join(', ') || 'None';
-
-
-
-            // Account wise top 10 items ka context
-            const accountDetails = {};
-            sqlData.forEach(row => {
-    if (row.type === 'expense') {
-        const acc = (row.accounts && row.accounts.name) ? row.accounts.name : (row.account_name || row.account_id || 'Unknown Account');
-        if (!accountDetails[acc]) accountDetails[acc] = [];
-        if (accountDetails[acc].length < 10) { // Har account ke top 10 dikhao
-            accountDetails[acc].push(`${row.description || 'N/A'} (₹${row.amount})`);
-        }
-    }
-            });
-
-            const formattedAccountDetails = Object.entries(accountDetails)
-            .map(([acc, items]) => `${acc}: ${items.join(', ')}`).join('\n'); 
-
-
+          const expenseRows = sqlData.filter((row) => !isAccountClosing(row));
+          const sortedData = [...expenseRows].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
           const formatDate = (ts) => {
-            if (!ts) return 'N/A';
-            const s = String(ts);
+            const s = String(ts || '');
             return s.includes('T') ? s.split('T')[0] : s.substring(0, 10);
           };
+          const listN = extractListCount(question);
+          const txnList =
+            sortedData
+              .slice(0, listN)
+              .map((r, i) => `${i + 1}. ${formatTxnLine(r, formatDate)}`)
+              .join('\n') || 'None';
+          const latestTxnLine = sortedData[0] ? formatTxnLine(sortedData[0], formatDate) : 'None';
+          const searchBlock = buildQuestionSearchBlock(question, sortedData, formatDate);
+          const queryHint = buildQueryHint(question);
 
-          const recentFive = sortedData.slice(0, 5)
-            .map(r => `📅 ${formatDate(r.created_at)} • ${r.description || 'N/A'} • ${r.type === 'income' ? '+' : '-'}₹${r.amount} • ${r.accounts?.name || r.category || 'N/A'}`)
-            .join('\n') || 'None';
+          contextText = `[TRANSACTION LIST — totals/top expense/this week from system prompt sections]
+${queryHint ? `${queryHint}\n` : ''}${searchBlock ? `${searchBlock}\n\n` : ''}Latest: ${latestTxnLine}
 
-          const latestTxn = sortedData[0];
-          const latestTxnLine = latestTxn
-            ? `📅 ${formatDate(latestTxn.created_at)} • ${latestTxn.description || 'N/A'} • ${latestTxn.type === 'income' ? '+' : '-'}₹${latestTxn.amount} • ${latestTxn.accounts?.name || latestTxn.category || 'N/A'}`
-            : 'None';
-          const compactHistory = sortedData.slice(0, 5)
-            .map((r, i) => `${i+1}. ${formatDate(r.created_at)} | ${r.type==='income'?'+':'-'}₹${r.amount} | ${r.description || 'N/A'} | ${r.accounts?.name || r.category || 'N/A'}`)
-            .join('\n') || 'None';
-
-          contextText += `\n[EXACT SQL RESULT]
-[RECENT 5 TRANSACTIONS - USE FOR "last transaction" or "recent" questions]
-${recentFive}
-
-Total Transaction Count: ${totalCount}
-All-Time Total Expense (last ${totalCount} transactions): ₹${allTimeExpense.toFixed(2)}
-All-Time Total Income: ₹${allTimeIncome.toFixed(2)}
-Current Month Expenses by Category: ${currentMonthCatBreakdown}
-All-Time Expenses by Category: ${allTimeCatBreakdown}
-
-[CRITICAL INSTRUCTION: DO NOT CALCULATE TOTALS]
-- NEVER do math yourself. Llama-3 is bad at math.
-- Use the exact totals provided below.
-- DO NOT confuse 'Live Account Balances' (how much money is left) with 'Total Spent' (how much was spent).
-
-[TOTAL SPENT (EXPENSE) PER ACCOUNT]
-${accountSpendingBreakdown}
-
---- TOP 5 HIGHEST EXPENSES (All Time) ---
-${top5Expenses}
-
-[LATEST TRANSACTION — USE THIS FOR "last transaction" QUESTIONS]
-${latestTxnLine}
-=== COMPLETE HISTORY (Last 50 transactions, newest first) ===
-${compactHistory}
-`;
-
-          diag.dataScanned.rowsSentToAI = Math.min(50, totalCount);
-          diag.dataScanned.bytesScanned = JSON.stringify(sqlData).length;
+${txnList}`;
+          diag.dataScanned.rowsSentToAI = listN;
+          diag.dataScanned.bytesScanned = contextText.length;
         }
+        finalHistory = [];
       }
 
-      // ── Vector / Semantic Logic (For VECTOR & HYBRID Routes) ──────────────
-      if (diag.route === 'VECTOR') {
+      if (route === 'ACTION') {
+        const dbStart = Date.now();
+        const { data } = await supabase
+          .from('transactions')
+          .select('id, description, amount, type, created_at')
+          .eq('user_id', userId)
+          .eq('is_hidden', false)
+          .order('created_at', { ascending: false })
+          .limit(12);
+        diag.dbCalls.push({
+          table: 'transactions',
+          operation: 'SELECT (Action Route)',
+          rowsFound: data?.length || 0,
+          time_ms: Date.now() - dbStart,
+          filter: `user_id = ${userId}`,
+        });
+        if (data?.length) {
+          usedDB = true;
+          contextText = `[RECENT TRANSACTIONS — for DELETE id only]\n${data
+            .map((r) => `id:${r.id} | ${r.description || 'N/A'} | ₹${r.amount} | ${r.type}`)
+            .join('\n')}`;
+        }
+        finalHistory = [];
+      }
+
+      if (route === 'VECTOR') {
         try {
           const { relevantIDs, searchStats } = await searchRelevantTransactions(userId, question, c.env);
           diag.vector = searchStats;
@@ -380,25 +427,17 @@ ${compactHistory}
         enrichedPrompt += `\n\nUser's Additional Database Context:\n${contextText}`;
       }
     }
-    
-    // Clear chat history for SQL/Hybrid routes to prevent Llama-3 from summarizing past questions
-    let finalHistory = history;
-    if (diag.route === 'SQL' || diag.route === 'HYBRID') {
-        finalHistory = [];
+
+    if (route === 'VECTOR') {
+      enrichedPrompt += `\n\n${SYSTEM_PROMPTS.vector}`;
     }
 
-    // GLOBAL ENFORCEMENT RULES FOR ALL ROUTES
-    enrichedPrompt += `\n\n[CRITICAL FINAL RULES - FOLLOW EXACTLY]
-1. Transaction add karna ho aur account missing ho toh SIRF itna pucho: "Kaunse account se?" — kuch aur mat likho.
-2. Valid Add/Delete action ke liye SIRF JSON output karo — koi text nahi.
-3. Transaction list dikhani ho toh SIRF is format mein dikho, koi extra text nahi:
-   📅 YYYY-MM-DD • Description • +/-₹Amount • Account
-4. Agar user ne number bataya (last 5, last 3) toh exactly utni hi dikho.
-5. Number nahi bataya toh last 5 dikho by default.
-6. KABHI BHI khaali response mat do — hamesha kuch na kuch likho.
-7. Balance pucha hai toh LIVE ACCOUNT BALANCES section se exact number lo.
-8. NEVER say "Kuch samajh nahi aaya" for financial questions — always try to answer.
-9. NEVER repeat the same word multiple times. If you catch yourself repeating, stop and summarize instead.`;
+    if (route !== 'CASUAL') {
+      enrichedPrompt += `\n\n[FINAL RULES]
+- Numbers: system prompt sections only — never calculate.
+- Lists: from TRANSACTION LIST only. Category/balance: from CATEGORY SPEND / LIVE BALANCES.
+- Add/Delete: JSON only, or "Kaunse account se?" if account missing.`;
+    }
 
     // ── AI Call ───────────────────────────────────────────────────────────────
     console.log("👉 [ai-engine] Calling getChatResponse...");

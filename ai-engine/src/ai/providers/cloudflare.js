@@ -31,12 +31,46 @@ export const askCloudflareAI = async (systemPrompt, userQuestion, history = [], 
         messages: validMessages,
         max_tokens: 2048
     });
-    const answer = response?.response?.trim();
+
+    const answer = extractChatText(response);
     if (!answer || answer.length < 2) {
       return "Mujhe yeh samajh nahi aaya. Kripya dobara poochho.";
     }
     return answer;
 };
+
+/** CF models may return string, { response: string }, or nested objects (tools/json). */
+function extractChatText(response) {
+    if (response == null) return '';
+    if (typeof response === 'string') return response.trim();
+
+    const candidates = [
+        response.response,
+        response.result,
+        response.text,
+        response.output,
+        response.choices?.[0]?.message?.content,
+    ];
+
+    for (const c of candidates) {
+        if (typeof c === 'string' && c.trim()) return c.trim();
+        if (c && typeof c === 'object') {
+            if (typeof c.response === 'string' && c.response.trim()) return c.response.trim();
+            if (typeof c.content === 'string' && c.content.trim()) return c.content.trim();
+            if (typeof c.text === 'string' && c.text.trim()) return c.text.trim();
+        }
+    }
+
+    if (typeof response.response === 'object' && response.response !== null) {
+        try {
+            return JSON.stringify(response.response);
+        } catch {
+            /* fall through */
+        }
+    }
+
+    return '';
+}
 
 export const getCloudflareEmbeddings = async (text, env = {}) => {
     if (!env.AI) {
