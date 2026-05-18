@@ -29,7 +29,7 @@ export const askCloudflareAI = async (systemPrompt, userQuestion, history = [], 
 
     const response = await env.AI.run(AI_CONFIG.CF_MODEL.chat, {
         messages: validMessages,
-        max_tokens: 1200
+        max_tokens: 2048
     });
     const answer = response?.response?.trim();
     if (!answer || answer.length < 2) {

@@ -3,6 +3,9 @@
  * Category-wise expense breakdown chart — pure CSS, no external library.
  * Donut chart + legend bars dikhata hai.
  * Props: transactions (array from trackerData)
+ *
+ * Category labels come ONLY from transaction.category (Supabase).
+ * No client-side inference — see backend detectCategory().
  */
 
 // Category config — badge ke liye bhi yahi use hota hai
@@ -12,41 +15,17 @@ export const CATEGORY_CONFIG = {
   Bills:     { emoji: '💡', color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.3)',  label: 'Bills'     },
   Fuel:      { emoji: '⛽', color: '#eab308', bg: 'rgba(234,179,8,0.12)',   border: 'rgba(234,179,8,0.3)',   label: 'Fuel'      },
   Transport: { emoji: '🚗', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.3)', label: 'Transport' },
+  Travel:    { emoji: '✈️', color: '#0ea5e9', bg: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.3)', label: 'Travel'    },
   Salary:    { emoji: '💰', color: '#22c55e', bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.3)',  label: 'Salary'    },
   Transfer:  { emoji: '🔄', color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.3)', label: 'Transfer'  },
   Entertainment: { emoji: '🎬', color: '#ec4899', bg: 'rgba(236,72,153,0.12)', border: 'rgba(236,72,153,0.3)', label: 'Entertainment' },
   Fitness:   { emoji: '💪', color: '#f43f5e', bg: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.3)', label: 'Fitness' },
   Health:    { emoji: '⚕️', color: '#06b6d4', bg: 'rgba(6,182,212,0.12)', border: 'rgba(6,182,212,0.3)', label: 'Health' },
+  Housing:   { emoji: '🏠', color: '#a16207', bg: 'rgba(161,98,7,0.12)', border: 'rgba(161,98,7,0.3)', label: 'Housing' },
+  Income:    { emoji: '💰', color: '#22c55e', bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.3)', label: 'Income' },
+  General:   { emoji: '📦', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.3)', label: 'General' },
   Other:     { emoji: '📦', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.3)', label: 'Other'     },
 };
-
-/**
- * Description se category guess karta hai (AI-imported transactions ke liye)
- * Ya transaction description mein category keyword dhundta hai
- */
-export function guessCategory(t) {
-  // Use DB category if it exists and is meaningful
-  if (t.category && t.category !== 'General' && t.category !== 'Other') {
-    return t.category.charAt(0).toUpperCase() + t.category.slice(1).toLowerCase();
-  }
-
-  // Pehle agar description mein koi known category ka naam hai
-  const desc = (t.description || '').toLowerCase();
-
-  if (/salary|stipend|payroll/.test(desc)) return 'Salary';
-  if (/swiggy|zomato|restaurant|food|cafe|hotel|eat|meal|biryani|pizza|burger|blinkit|grocery/.test(desc)) return 'Food';
-  if (/amazon|flipkart|myntra|meesho|shopping|mall|mart|store|shop/.test(desc)) return 'Shopping';
-  if (/petrol|diesel|fuel|hp|bpcl|iocl|shell|indian oil/.test(desc)) return 'Fuel';
-  if (/uber|ola|metro|bus|train|cab|auto|rapido|transport|travel|flight|ticket/.test(desc)) return 'Transport';
-  if (/electricity|water|gas|dth|broadband|internet|bill|recharge|jio|airtel/.test(desc)) return 'Bills';
-  if (/netflix|spotify|prime|hotstar|subscription|movie|cinema/.test(desc)) return 'Entertainment';
-  if (/transfer|neft|imps|rtgs|upi|sent|received/.test(desc)) return 'Transfer';
-
-  // income type ko Salary/Other mein rakhte hain
-  if (t.type === 'income') return 'Salary';
-
-  return 'Other';
-}
 
 // Fmt helper
 const fmtNum = n => '₹' + Math.round(n).toLocaleString('en-IN');
@@ -62,7 +41,7 @@ export default function CategoryChart({ transactions }) {
   const totals = {};
   let grandTotal = 0;
   expenseTxns.forEach(t => {
-    const cat = guessCategory(t);
+    const cat = t.category || 'General';
     totals[cat] = (totals[cat] || 0) + t.amount;
     grandTotal += t.amount;
   });

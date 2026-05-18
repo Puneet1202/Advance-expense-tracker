@@ -1,5 +1,6 @@
 import { parseWithLocalEngine } from './local-parser.js';
 import { getSupabaseClient } from '../../db/supabase.js';
+import { detectCategory } from '../ai-chat/chat-handler.js';
 
 export const importStatementHandler = async (c) => {
     try {
@@ -85,6 +86,9 @@ export const importStatementHandler = async (c) => {
                 const dedupKey = `${amount}|${isoDate}|${description.toLowerCase().trim()}|${type}`;
                 if (existingSet.has(dedupKey)) { skipped++; continue; }
 
+                const rawCat = txn.category != null ? String(txn.category).trim() : '';
+                const resolvedCategory = rawCat || detectCategory(description);
+
                 const { error: insErr } = await supabase
                     .from('transactions')
                     .insert({
@@ -92,6 +96,7 @@ export const importStatementHandler = async (c) => {
                         type,
                         amount,
                         description,
+                        category: resolvedCategory,
                         account_id: Number(account_id),
                         created_at: isoDate + 'T00:00:00.000Z'
                     });

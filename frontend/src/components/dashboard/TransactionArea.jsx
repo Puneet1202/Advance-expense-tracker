@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { fmt } from '../../utils/formatCurrency';
-import { guessCategory, CATEGORY_CONFIG } from './CategoryChart';
+import { CATEGORY_CONFIG } from './CategoryChart';
 import { createPortal } from 'react-dom';
 
 // ─── Currency Config ─────────────────────────────────────────────────────────
@@ -43,7 +43,7 @@ const fmtDate = s => new Date(s).toLocaleDateString('en-IN', { day: 'numeric', m
 
 // ─── Transaction Item (with category tag + delete) ────────────────────────────
 const TransactionItem = ({ t, onDelete }) => {
-  const cat = guessCategory(t);
+  const cat = t.category || 'General';
   const cfg = CATEGORY_CONFIG[cat] || CATEGORY_CONFIG.Other;
 
   return (

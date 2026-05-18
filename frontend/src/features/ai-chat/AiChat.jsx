@@ -6,7 +6,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useAiChat } from './useAiChat';
-import { guessCategory, CATEGORY_CONFIG } from '../../components/dashboard/CategoryChart';
+import { CATEGORY_CONFIG } from '../../components/dashboard/CategoryChart';
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 const fmt = n => '₹' + Math.round(n).toLocaleString('en-IN');
@@ -195,7 +195,7 @@ function InsightsTab({ trackerData }) {
   // Category breakdown
   const catMap = {};
   transactions.filter(t => t.type === 'expense').forEach(t => {
-    const cat = guessCategory(t);
+    const cat = t.category || 'General';
     catMap[cat] = (catMap[cat] || 0) + t.amount;
   });
   const topCat = Object.entries(catMap).sort((a, b) => b[1] - a[1])[0];

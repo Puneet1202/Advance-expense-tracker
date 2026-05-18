@@ -11,6 +11,7 @@
 //   - Filtering (date, type, search) JS mein hi karte hain — same as before
 
 import { getSupabaseClient } from '../db/supabase.js';
+import { detectCategory } from '../features/ai-chat/chat-handler.js';
 
 // ─── Helper: Transactions fetch with account_name JOIN ────────────────────────
 // WHY HELPER: Ye JOIN Supabase mein foreign key se hoti hai.
@@ -221,7 +222,14 @@ export const addTransaction = async (c) => {
         }
 
         // ✅ Category default set karo
-        const finalCategory = category || (type === 'income' ? 'Income' : 'General');
+        // Category: expenses always from detectCategory(description); income keeps client/AI hint then detect then Income
+        const trimmed = category && String(category).trim();
+        let finalCategory;
+        if (type === 'income') {
+            finalCategory = trimmed || detectCategory(description) || 'Income';
+        } else {
+            finalCategory = detectCategory(description);
+        }
 
         // Transaction insert karo aur ID wapas lo
         const { data: inserted, error } = await supabase

@@ -2,11 +2,11 @@
  * AnalyticsModal.jsx
  * Full-screen analytics modal — category-wise donut chart,
  * ranked category list with progress bars, and monthly income vs expense bar chart.
- * Uses CATEGORY_CONFIG + guessCategory from CategoryChart.jsx.
+ * Uses CATEGORY_CONFIG from CategoryChart.jsx.
  * Props: trackerData, onClose
  */
 
-import { CATEGORY_CONFIG, guessCategory } from './CategoryChart';
+import { CATEGORY_CONFIG } from './CategoryChart';
 
 const fmt = n => '₹' + Math.round(n).toLocaleString('en-IN');
 
@@ -127,7 +127,7 @@ export default function AnalyticsModal({ trackerData, onClose }) {
 
   const totalsMap = {};
   expenseTxns.forEach(t => {
-    const cat = guessCategory(t);
+    const cat = t.category || 'General';
     totalsMap[cat] = (totalsMap[cat] || 0) + t.amount;
   });
   const sorted = Object.entries(totalsMap)
