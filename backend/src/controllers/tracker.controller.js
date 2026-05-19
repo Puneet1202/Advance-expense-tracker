@@ -1,6 +1,8 @@
 import { getSupabaseClient } from '../db/supabase.js';
 import { saveEmbedding } from '../features/embedding.js';
 
+import { aiChat } from '../../../ai-engine/chat.js';
+
 
 // ── detectCategory (simple, no AI) ───────────────────────────────────────────
 function detectCategory(description = '') {
@@ -348,5 +350,34 @@ export const undoLastTransaction = async (c) => {
         return c.json({ message: 'Koi transaction nahi mili', status: 400 }, 400);
     } catch (error) {
         return c.json({ message: 'internal server error', status: 500 }, 500);
+    }
+};
+
+export const aiChatHandler = async (c) => {
+    try {
+        const user = c.get('user');
+        const supabase = getSupabaseClient(c.env);
+        const { message, history = [] } = await c.req.json();
+
+        if (!message) return c.json({ message: 'Message required', status: 400 }, 400);
+
+        // Direct DB se fresh data fetch karo
+        const transactions = await fetchAllTransactions(supabase, user.id);
+        const { data: accountsData } = await supabase
+            .from('accounts')
+            .select('*')
+            .eq('user_id', user.id);
+
+        const accounts = (accountsData || []).map(acc => ({
+            ...acc,
+            balance: calcBalance(transactions, acc.id)
+        }));
+
+        const result = await aiChat(c.env, transactions, accounts, message, history);
+        return c.json({ ...result, status: 200 }, 200);
+
+    } catch (error) {
+        console.error('[AI Chat]', error);
+        return c.json({ message: 'AI error', status: 500 }, 500);
     }
 };
