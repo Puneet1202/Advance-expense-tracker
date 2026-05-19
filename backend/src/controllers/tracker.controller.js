@@ -1,4 +1,6 @@
 import { getSupabaseClient } from '../db/supabase.js';
+import { saveEmbedding } from '../features/embedding.js';
+
 
 // ── detectCategory (simple, no AI) ───────────────────────────────────────────
 function detectCategory(description = '') {
@@ -152,6 +154,7 @@ export const updateSettings = async (c) => {
 
 // ── POST /api/tracker/transaction ─────────────────────────────────────────────
 export const addTransaction = async (c) => {
+    
     try {
         const user = c.get('user');
         const supabase = getSupabaseClient(c.env);
@@ -186,16 +189,28 @@ export const addTransaction = async (c) => {
 
         const finalCategory = category?.trim() || detectCategory(description);
 
-        const { error } = await supabase
-            .from('transactions')
-            .insert({ user_id: user.id, type, amount, description, category: finalCategory, account_id: account_id || null });
+       const { data: inserted, error } = await supabase
+    .from('transactions')
+    .insert({ user_id: user.id, type, amount, description, category: finalCategory, account_id: account_id || null })
+    .select('id')
+    .single();
 
-        if (error) throw error;
-        return c.json({ message: 'Transaction added', status: 200 }, 200);
+if (error) throw error; // pehle error check
+
+console.log('[Embedding] Transaction ID:', inserted?.id);
+console.log('[Embedding] Text:', `${description} ${finalCategory}`);
+
+await saveEmbedding(c.env, inserted.id, `${description} ${finalCategory}`);
+
+
+return c.json({ message: 'Transaction added', status: 200 }, 200);
 
     } catch (error) {
-        return c.json({ message: 'internal server error', status: 500 }, 500);
-    }
+    console.error('Transaction error:', error); 
+    console.error('[Embedding] Failed:', error.message, error);
+    return c.json({ message: 'internal server error', status: 500 }, 500);
+}
+
 };
 
 // ── DELETE /api/tracker/transaction/:id ───────────────────────────────────────
