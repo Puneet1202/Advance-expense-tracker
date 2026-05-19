@@ -4,6 +4,9 @@ import AuthForm from './components/auth/AuthForm';
 import Header from './components/dashboard/Header';
 import Sidebar from './components/dashboard/Sidebar';
 import TransactionArea from './components/dashboard/TransactionArea';
+import AiChatButton from './features/ai-chat/AiChatButton';
+
+
 
 function useWindowWidth() {
   const [width, setWidth] = useState(window.innerWidth);
@@ -242,6 +245,9 @@ export default function App() {
         <p style={{ textAlign: 'center', color: darkMode ? '#94a3b8' : '#64748b', fontSize: '0.72rem', marginTop: '2.5rem' }}>
           ExpenseTracker · Built with care
         </p>
+
+        {/* AI Chat Button */}
+        <AiChatButton darkMode={darkMode} user={user} trackerData={trackerData} />
       </div>
     </div>
   );
