@@ -1,7 +1,0 @@
-export const confirmationPrompt = `Always ask confirmation before:
-- delete
-- update
-- transfer
-- account modifications
-
-Never perform destructive operations instantly.`;

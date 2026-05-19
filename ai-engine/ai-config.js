@@ -3,7 +3,6 @@
 // CONNECTS TO: AI Providers (cloudflare.js, ollama.js)
 // CONFIG: Single source of truth for all AI settings
 
-import { COMPOSED_EXPENSE_TRACKER_PROMPT, SYSTEM_PROMPTS, INTENT_PROMPTS, VALIDATION_PROMPTS, RESPONSE_PROMPTS } from './prompts/index.js';
 
 const ENV = "production" // "local" | "production"
 // SIRF YAHAN CHANGE KARO — baaki sab 

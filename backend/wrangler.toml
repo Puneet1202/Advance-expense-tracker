@@ -1,0 +1,9 @@
+name = "expense-tracker"
+main = "src/app.js"
+compatibility_date = "2026-04-28"
+compatibility_flags = [ "nodejs_compat" ]
+
+# Dev server
+
+[dev]
+port = 8787

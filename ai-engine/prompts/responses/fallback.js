@@ -1,8 +1,0 @@
-export const fallbackPrompt = `If query cannot be verified:
-- do not hallucinate
-- do not guess
-- ask clarification
-- use safe fallback response
-
-Fallback:
-"I could not verify this information from the database."`;
