@@ -1,73 +1,53 @@
-import AI_CONFIG from '../../../ai-config.js';
+const CHAT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
-// FILE: cloudflare.js
-// KAAM: CF Workers AI API calls for chat and embeddings
-// CONNECTS TO: Cloudflare Workers AI
-// CONFIG: ai-config.js se ENV setting leta hai
-
-export const askCloudflareAI = async (systemPrompt, userQuestion, history = [], env = {}) => {
-    if (!env.AI) {
-        throw new Error("Cloudflare AI binding missing!");
-    }
-    const rawMessages = [
-        { role: 'system', content: systemPrompt || "You are a helpful assistant." },
-        ...history,
-        { role: 'user', content: userQuestion || "Hello" }
-    ];
-
-    // Cloudflare AI strict validation: no empty content, no consecutive same roles
+function normalizeMessages(messages = []) {
     const validMessages = [];
-    for (const msg of rawMessages) {
-        if (!msg.content || msg.content.trim() === '') continue;
-        // Don't add if previous role is the same (except system at start)
-        if (validMessages.length > 0 && validMessages[validMessages.length - 1].role === msg.role) {
-            validMessages[validMessages.length - 1].content += `\n${msg.content}`;
+
+    for (const item of messages) {
+        if (!item || typeof item.content !== 'string' || !item.content.trim()) continue;
+
+        const role = item.role === 'system' || item.role === 'assistant' ? item.role : 'user';
+        const content = item.content.trim();
+        const previous = validMessages[validMessages.length - 1];
+
+        if (previous?.role === role && role !== 'system') {
+            previous.content += `\n${content}`;
         } else {
-            validMessages.push(msg);
+            validMessages.push({ role, content });
         }
     }
 
-    const response = await env.AI.run(AI_CONFIG.CF_MODEL.chat, {
-        messages: validMessages,
-        max_tokens: 2048
+    return validMessages;
+}
+
+function extractText(response) {
+    if (typeof response === 'string') return response;
+    if (typeof response?.response === 'string') return response.response;
+    if (typeof response?.result?.response === 'string') return response.result.response;
+    if (typeof response?.text === 'string') return response.text;
+
+    const content = response?.choices?.[0]?.message?.content;
+    if (typeof content === 'string') return content;
+
+    throw new Error('Cloudflare AI response did not include text');
+}
+
+export async function askCloudflareAI(systemPrompt, message, history = [], env) {
+    if (!env?.AI?.run) {
+        throw new Error('Cloudflare AI binding is missing');
+    }
+
+    const messages = normalizeMessages([
+        { role: 'system', content: systemPrompt || 'You are a helpful assistant.' },
+        ...history,
+        { role: 'user', content: message || 'Hello' }
+    ]);
+
+    const response = await env.AI.run(CHAT_MODEL, {
+        messages,
+        temperature: 0.2,
+        max_tokens: 1200
     });
 
-    const answer = extractChatText(response);
-    if (!answer || answer.length < 2) {
-      return "I didn't understand that. Please try again.";
-    }
-    return answer;
-};
-
-/** CF models may return string, { response: string }, or nested objects (tools/json). */
-function extractChatText(response) {
-    if (response == null) return '';
-    if (typeof response === 'string') return response.trim();
-
-    const candidates = [
-        response.response,
-        response.result,
-        response.text,
-        response.output,
-        response.choices?.[0]?.message?.content,
-    ];
-
-    for (const c of candidates) {
-        if (typeof c === 'string' && c.trim()) return c.trim();
-        if (c && typeof c === 'object') {
-            if (typeof c.response === 'string' && c.response.trim()) return c.response.trim();
-            if (typeof c.content === 'string' && c.content.trim()) return c.content.trim();
-            if (typeof c.text === 'string' && c.text.trim()) return c.text.trim();
-        }
-    }
-
-    if (typeof response.response === 'object' && response.response !== null) {
-        try {
-            return JSON.stringify(response.response);
-        } catch {
-            /* fall through */
-        }
-    }
-
-    return '';
+    return extractText(response).trim();
 }

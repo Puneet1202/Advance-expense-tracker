@@ -5,7 +5,6 @@ import { sendChatMessage } from "./chatApi";
 
 export default function AiChat({ trackerData, fetchTrackerData, onClose }) {
   const { transactions = [], accounts = [] } = trackerData;
-  const balances = accounts.map(a => ({ id: a.id, name: a.name, balance: a.balance }));
 
   const [messages, setMessages] = useState(() => {
     try { return JSON.parse(localStorage.getItem('ai_chat_history') || '[]'); } catch { return []; }
@@ -46,59 +45,32 @@ export default function AiChat({ trackerData, fetchTrackerData, onClose }) {
     setIsLoading(true);
 
     try {
-      const history = messages.slice(-6).map(m => ({ role: m.role === 'ai' ? 'assistant' : m.role, content: m.content }));
-      const { reply, action } = await sendChatMessage(msg, transactions, balances, history);
+      // Clean History Mapping
+      const history = messages.slice(-6).map(m => ({ 
+        role: m.role === 'ai' || m.role === 'assistant' ? 'assistant' : 'user', 
+        content: m.content 
+      }));
 
-      if (action) {
-        // Execute action
-        const { default: api } = await import("../../api/axios");
+      // CLEAN ACTION: Sahi clean payload pass karo, heavy arrays bhejni band!
+      const result = await sendChatMessage(msg, history);
 
-        if (action.action === 'DELETE_TRANSACTION') {
-          const confirmed = window.confirm(`Delete this transaction?\n"${action.data.description}"`);
-          if (!confirmed) { addMsg("assistant", "❌ Delete cancel."); return; }
-          await api.delete(`/tracker/transaction/${action.data.id}`);
-          addMsg("assistant", `✅ Deleted: **${action.data.description}**`);
-          setActionStatus({ type: "success", message: "Transaction deleted" });
-          fetchTrackerData?.();
-
-        } else if (action.action === 'ADD_TRANSACTION') {
-          const account = accounts.find(a => a.name.toLowerCase() === action.data.account_name?.toLowerCase()) || accounts[0];
-          if (!account) { addMsg("assistant", "⚠️ No account found. Please add an account first."); return; }
-          await api.post('/tracker/transaction', {
-            type: action.data.type === 'credit' ? 'income' : 'expense',
-            amount: Math.abs(Number(action.data.amount)),
-            description: action.data.description || 'AI Added',
-            account_id: account.id,
-            category: action.data.category,
-          });
-          addMsg("assistant", `✅ **${action.data.description}** — ₹${Number(action.data.amount).toLocaleString('en-IN')} added!`);
-          setActionStatus({ type: "success", message: `Added to ${account.name}` });
-          fetchTrackerData?.();
-
-        } else if (action.action === 'TOGGLE_SAVING_MODE') {
-          await api.post('/tracker/settings', { is_saving_mode: action.data.status, expense_limit: Number(action.data.limit) || 0 });
-          addMsg("assistant", `✅ Saving mode ${action.data.status ? 'ON' : 'OFF'}!`);
-          setActionStatus({ type: "success", message: "Settings updated" });
-          fetchTrackerData?.();
-
-        } else if (action.action === 'UNDO_LAST_ACTION') {
-          const confirmed = window.confirm('Are you sure you want to undo the last action?');
-          if (!confirmed) { addMsg("assistant", "❌ Undo cancel."); return; }
-          await api.post('/tracker/undo');
-          addMsg("assistant", "✅ Last action undo ho gaya!");
-          setActionStatus({ type: "success", message: "Undo successful" });
+      // Agar backend ne direct decision process karke reply diya (SQL response ya direct action success message)
+      if (result.reply) {
+        addMsg("assistant", result.reply);
+        
+        // Edge check: Agar reply mein backend ne bola ki transaction add/delete ho gayi, toh dashboard refresh maaro
+        if (result.reply.includes("add kar diya") || result.reply.includes("remove") || result.reply.includes("Undo")) {
+          setActionStatus({ type: "success", message: "Dashboard updated" });
           fetchTrackerData?.();
         }
-
-      } else if (reply) {
-        addMsg("assistant", reply);
       }
+
     } catch (err) {
       addMsg("assistant", `⚠️ ${err.response?.data?.message || err.message || 'Something went wrong. Please try again.'}`);
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, transactions, balances, accounts, fetchTrackerData]);
+  }, [input, isLoading, messages, fetchTrackerData]);
 
   const clearHistory = () => {
     setMessages([]);
@@ -153,7 +125,6 @@ export default function AiChat({ trackerData, fetchTrackerData, onClose }) {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.3 }}>
             <div style={{ fontSize: '3rem', marginBottom: '8px' }}>🤖</div>
             <p style={{ color: 'var(--text-4)', fontSize: '0.85rem', fontWeight: 500 }}>Ask me anything...</p>
-
           </div>
         ) : (
           <>
@@ -214,7 +185,6 @@ export default function AiChat({ trackerData, fetchTrackerData, onClose }) {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-          
             placeholder="Type a message..."
             disabled={isLoading}
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontSize: '0.83rem', color: 'var(--text-1)', fontFamily: 'inherit' }}

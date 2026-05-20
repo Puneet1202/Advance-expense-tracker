@@ -1,7 +1,4 @@
-// FILE: ai-config.js
-// KAAM: Environment based AI provider and model configuration
-// CONNECTS TO: AI Providers (cloudflare.js, ollama.js)
-// CONFIG: Single source of truth for all AI settings
+
 
 
 const ENV = "production" // "local" | "production"
@@ -37,16 +34,7 @@ const sharedConfig = {
       topK: 5,              
       threshold: 0.70       
   },
-  prompts: {
-      expenseTracker: COMPOSED_EXPENSE_TRACKER_PROMPT,
-      templates: {
-          system: SYSTEM_PROMPTS,
-          intents: INTENT_PROMPTS,
-          validation: VALIDATION_PROMPTS,
-          responses: RESPONSE_PROMPTS
-      },
-      historyLimit: 6
-  }
+
 };
 
 const config = {

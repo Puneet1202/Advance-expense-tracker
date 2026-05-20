@@ -52,6 +52,7 @@ function calcBalance(transactions, accountId) {
 }
 
 // ── GET /api/tracker ──────────────────────────────────────────────────────────
+// ── REFACTORED: GET /api/tracker ──────────────────────────────────────────
 export const getTrackerData = async (c) => {
     try {
         const user = c.get('user');
@@ -62,9 +63,10 @@ export const getTrackerData = async (c) => {
         const type      = c.req.query('type');
         const search    = c.req.query('search');
 
+        // FIX: 'custom_instructions' column ko select clause mein add kiya hai
         const { data: userData, error: userErr } = await supabase
             .from('users')
-            .select('name, email, expense_limit, is_saving_mode')
+            .select('name, email, expense_limit, is_saving_mode, custom_instructions')
             .eq('id', user.id)
             .maybeSingle();
         if (userErr) throw userErr;
@@ -118,9 +120,15 @@ export const getTrackerData = async (c) => {
         });
 
         return c.json({
-            user: { id: user.id, email: userData?.email || user.email, name: userData?.name || user.name || 'User' },
+            user: { 
+                id: user.id, 
+                email: userData?.email || user.email, 
+                name: userData?.name || user.name || 'User' 
+            },
             expense_limit: userData?.expense_limit || 0,
             is_saving_mode: userData?.is_saving_mode || false,
+            // FIX: Naye fallback logic ke sath dynamic user text instructions inject kiye hain
+            custom_instructions: userData?.custom_instructions || '',
             total_income: monthlyIncome,
             total_expenses: monthlyExpenses,
             transactions: visibleTxns,
@@ -130,26 +138,32 @@ export const getTrackerData = async (c) => {
         }, 200);
 
     } catch (error) {
-        console.error(error);
+        console.error("Error inside getTrackerData:", error);
         return c.json({ message: 'internal server error', status: 500 }, 500);
     }
 };
-
 // ── POST /api/tracker/settings ────────────────────────────────────────────────
+// ── REFACTORED: POST /api/tracker/settings ────────────────────────────────────
 export const updateSettings = async (c) => {
     try {
         const user = c.get('user');
         const supabase = getSupabaseClient(c.env);
-        const { expense_limit, is_saving_mode } = await c.req.json();
+        const { expense_limit, is_saving_mode, custom_instructions } = await c.req.json();
 
+        // Database ke andar live user document settings update karo
         const { error } = await supabase
             .from('users')
-            .update({ expense_limit: expense_limit || 0, is_saving_mode: !!is_saving_mode })
+            .update({ 
+                expense_limit: expense_limit || 0, 
+                is_saving_mode: !!is_saving_mode,
+                custom_instructions: custom_instructions !== undefined ? custom_instructions : ''
+            })
             .eq('id', user.id);
 
         if (error) throw error;
-        return c.json({ message: 'Settings updated', status: 200 }, 200);
+        return c.json({ message: 'Settings and AI instructions updated successfully', status: 200 }, 200);
     } catch (error) {
+        console.error("Settings Update Error:", error);
         return c.json({ message: 'internal server error', status: 500 }, 500);
     }
 };
@@ -361,23 +375,130 @@ export const aiChatHandler = async (c) => {
 
         if (!message) return c.json({ message: 'Message required', status: 400 }, 400);
 
-        // Direct DB se fresh data fetch karo
-        const transactions = await fetchAllTransactions(supabase, user.id);
-        const { data: accountsData } = await supabase
-            .from('accounts')
-            .select('*')
-            .eq('user_id', user.id);
+        // ======================================================================
+        // 🧠 STEP 1: Live User Custom Instructions Fetch Karo (From Database)
+        // ======================================================================
+        const { data: userData } = await supabase
+            .from('users')
+            .select('custom_instructions')
+            .eq('id', user.id)
+            .maybeSingle();
 
-        const accounts = (accountsData || []).map(acc => ({
-            ...acc,
-            balance: calcBalance(transactions, acc.id)
-        }));
+        // Core Database Schema ke sath user ki likhi hui custom instructions merge karo
+        const finalSchemaWithCustomRules = `
+${DB_SCHEMA}
 
-        const result = await aiChat(c.env, transactions, accounts, message, history);
+ADDITIONAL USER CUSTOM PREFERENCES (STRICTLY FOLLOW THESE):
+${userData?.custom_instructions || 'No specific custom instructions.'}
+`;
+
+        // ======================================================================
+        // ⚡ STEP 2: Supabase Client Wrapper (Emulating D1 Interface for Engine)
+        // ======================================================================
+        const envWithDb = { 
+            ...c.env, 
+            DB: {
+                prepare: (sqlQuery) => ({
+                    bind: (...args) => ({
+                        all: async () => {
+                            // Run the raw SQL generated by AI directly via Supabase RPC function
+                            const { data, error } = await supabase.rpc('execute_raw_sql', { query_text: sqlQuery });
+                            if (error) throw error;
+                            return { results: data || [] };
+                        }
+                    })
+                })
+            }
+        };
+
+        // ======================================================================
+        // 🤖 STEP 3: Call Smart Layered AI Engine with Dynamic Schema Rules
+        // ======================================================================
+        const result = await aiChat(envWithDb, supabase, user.id, message, history, finalSchemaWithCustomRules);
+
+        // ======================================================================
+        // 🚀 STEP 4: FLOW A — AGAR AI ENGINE NE KOI ACTION RETURN KIYA
+        // ======================================================================
+        if (result.action) {
+            const { action, data } = result.action;
+
+            // 1. HANDLE: ADD_TRANSACTION
+            if (action === "ADD_TRANSACTION") {
+                if (!data.amount || !data.type || !data.account_id) {
+                    return c.json({ reply: "Bhai, account ya amount ki details adhuri hain. Please sahi se batao." }, 200);
+                }
+
+                const finalCategory = data.category?.trim() || detectCategory(data.description);
+
+                const { data: inserted, error: insertErr } = await supabase
+                    .from('transactions')
+                    .insert({ 
+                        user_id: user.id, 
+                        type: data.type, 
+                        amount: Number(data.amount), 
+                        description: data.description || (data.type === 'income' ? 'Income' : 'Expense'), 
+                        category: finalCategory, 
+                        account_id: data.account_id 
+                    })
+                    .select('id')
+                    .single();
+
+                if (insertErr) throw insertErr;
+
+                // Future-ready embedding conversion background mein chalao
+                try {
+                    await saveEmbedding(c.env, inserted.id, `${data.description} ${finalCategory}`);
+                } catch (embErr) {
+                    console.error('[Embedding Failed]', embErr);
+                }
+
+                return c.json({ reply: `Done boss! ₹${data.amount} ka ${data.type} "${data.description}" mein add kar diya hai.` }, 200);
+            }
+
+            // 2. HANDLE: DELETE_TRANSACTION
+            if (action === "DELETE_TRANSACTION") {
+                const { data: matchTxn } = await supabase
+                    .from('transactions')
+                    .select('id, description, amount')
+                    .eq('user_id', user.id)
+                    .ilike('description', `%${data.description}%`)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (!matchTxn) {
+                    return c.json({ reply: `Mujhe "${data.description}" naam ki koi transaction nahi mili jise delete karun.` }, 200);
+                }
+
+                await supabase.from('transactions').delete().eq('id', matchTxn.id).eq('user_id', user.id);
+                return c.json({ reply: `Deleted! "${matchTxn.description}" (₹${matchTxn.amount}) ko remove kar diya gaya hai.` }, 200);
+            }
+
+            // 3. HANDLE: UNDO_LAST_ACTION
+            if (action === "UNDO_LAST_ACTION") {
+                const { data: lastTxn } = await supabase
+                    .from('transactions')
+                    .select('id, description, amount')
+                    .eq('user_id', user.id)
+                    .order('id', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (lastTxn) {
+                    await supabase.from('transactions').delete().eq('id', lastTxn.id).eq('user_id', user.id);
+                    return c.json({ reply: `Undo done! Last transaction "${lastTxn.description}" (₹${lastTxn.amount}) ko hata diya hai.` }, 200);
+                }
+                return c.json({ reply: 'Mujhe hataane ke liye koi puraani transaction nahi mili.' }, 200);
+            }
+        }
+
+        // ======================================================================
+        // 💬 STEP 5: FLOW B — PLAIN TEXT REPLIES / SQL RESULT REPLIES
+        // ======================================================================
         return c.json({ ...result, status: 200 }, 200);
 
     } catch (error) {
-        console.error('[AI Chat]', error);
-        return c.json({ message: 'AI error', status: 500 }, 500);
+        console.error('[AI Chat Handler Global Error]', error);
+        return c.json({ message: 'AI handling failed internal server error', status: 500 }, 500);
     }
 };

@@ -1,37 +1,58 @@
 /**
- * AiConfigPanel.jsx
- * Yeh component ek simple UI deta hai jahan aap PROMPT.md mein
- * apni AI instructions likh sakte ho.
- * Future mein: yeh instructions Gemini API call mein add hongi.
- * 
- * Props:
- *   - onClose: function — panel band karne ke liye
+ * AiConfigPanel.jsx (Dynamic Layer)
+ * Component jo user ki custom AI instructions ko seedha database mein update karta hai.
  */
 
 import { useState, useEffect } from 'react';
+import api from '../../api/axios'; // Tumhara global axios instance
 
-const STORAGE_KEY = 'ai_custom_instructions';
-
-export default function AiConfigPanel({ onClose }) {
+export default function AiConfigPanel({ trackerData, fetchTrackerData, onClose }) {
   const [instructions, setInstructions] = useState('');
   const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // localStorage se load karo
+  // Live state/trackerData se initial value load karo (No localStorage dependency!)
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY) || '';
-    setInstructions(stored);
-  }, []);
+    if (trackerData?.custom_instructions) {
+      setInstructions(trackerData.custom_instructions);
+    }
+  }, [trackerData]);
 
-  const handleSave = () => {
-    localStorage.setItem(STORAGE_KEY, instructions);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      // Direct API hit to update user settings in database
+      await api.post('/tracker/settings', {
+        expense_limit: trackerData?.expense_limit || 0,
+        is_saving_mode: !!trackerData?.is_saving_mode,
+        custom_instructions: instructions.trim()
+      });
+
+      setSaved(true);
+      fetchTrackerData?.(); // Pure dashboard ka state fresh reload karo!
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      console.error("Failed to save AI instructions:", err);
+      alert("⚠️ Settings save nahi ho payi. Kripya dubara try karein.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleReset = () => {
-    if (window.confirm('Custom instructions reset karein?')) {
-      setInstructions('');
-      localStorage.removeItem(STORAGE_KEY);
+  const handleReset = async () => {
+    if (window.confirm('Kya aap custom instructions ko clear karna chahte hain?')) {
+      try {
+        await api.post('/tracker/settings', {
+          expense_limit: trackerData?.expense_limit || 0,
+          is_saving_mode: !!trackerData?.is_saving_mode,
+          custom_instructions: '' // Send empty string to clear out
+        });
+        setInstructions('');
+        fetchTrackerData?.();
+      } catch (err) {
+        console.error("Failed to reset AI instructions:", err);
+      }
     }
   };
 
@@ -49,16 +70,16 @@ export default function AiConfigPanel({ onClose }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
           <div>
             <h2 style={{ fontSize: '1rem', fontWeight: 700, letterSpacing: '-0.03em', marginBottom: '3px' }}>
-              🧠 AI Instructions
+              🧠 AI System Config Panel
             </h2>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', lineHeight: 1.4 }}>
-              Yahan custom instructions likho — AI in instructions ke hisaab se kaam karega.
+              Yahan custom instructions likho — Tumhara AI Engine live inhi rules ke hisaab se transact aur search karega.
             </p>
           </div>
           <button className="btn btn-icon" onClick={onClose}>✕</button>
         </div>
 
-        {/* Info */}
+        {/* Info Box */}
         <div style={{
           background: 'var(--bg-3)',
           border: '1px solid var(--border)',
@@ -69,8 +90,7 @@ export default function AiConfigPanel({ onClose }) {
           marginBottom: '1rem',
           lineHeight: 1.5,
         }}>
-          💡 Example: "Meri SBI statement mein UPI transfers ko 'Transfer' category mein daalo,
-          aur Zomato/Swiggy ko 'Food' mein."
+          💡 <strong>Best Practice Example:</strong> "Hamesha dosto ki tarah Hinglish mein baat karo. Meri cash transactions ki category default 'Personal' set karo, aur Zomato ko strictly 'Food' likho."
         </div>
 
         {/* Textarea */}
@@ -78,9 +98,10 @@ export default function AiConfigPanel({ onClose }) {
           id="ai-instructions-textarea"
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
-          placeholder="Yahan apni instructions likho..."
+          placeholder="Yahan apni rules ya preferences type karein..."
           rows={10}
           className="field"
+          disabled={isSaving}
           style={{
             width: '100%',
             resize: 'vertical',
@@ -92,19 +113,21 @@ export default function AiConfigPanel({ onClose }) {
           }}
         />
 
-        {/* Actions */}
+        {/* Action Buttons */}
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
             id="ai-save-instructions-btn"
             className="btn btn-primary"
             onClick={handleSave}
+            disabled={isSaving}
             style={{ flex: 1, borderRadius: '12px', padding: '10px', fontSize: '0.85rem' }}
           >
-            {saved ? '✅ Saved!' : '💾 Save Karo'}
+            {isSaving ? '⏳ Saving...' : saved ? '✅ Saved Live!' : '💾 Save & Deploy'}
           </button>
           <button
             className="btn btn-ghost"
             onClick={handleReset}
+            disabled={isSaving}
             style={{ padding: '10px 16px', fontSize: '0.82rem', color: 'var(--red)' }}
           >
             Reset
@@ -112,7 +135,7 @@ export default function AiConfigPanel({ onClose }) {
         </div>
 
         <p style={{ fontSize: '0.72rem', color: 'var(--text-4)', marginTop: '0.75rem', textAlign: 'center' }}>
-          Instructions browser mein save hoti hain · PROMPT.md se sync hogi future mein
+          ⚡ Live Sync Active: Yeh instructions seedha database layer se compute hoti hain.
         </p>
       </div>
     </div>
