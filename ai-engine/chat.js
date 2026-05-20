@@ -1,4 +1,5 @@
-import { askCloudflareAI } from '../providers/claudflare.js'; 
+
+import { askCloudflareAI } from './src/providers/cloudflare.js';
 import { buildSQLPrompt, buildReplyPrompt, buildActionPrompt } from './prompts.js';
 
 /**

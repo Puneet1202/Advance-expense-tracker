@@ -2,6 +2,7 @@ import { getSupabaseClient } from '../db/supabase.js';
 import { saveEmbedding } from '../features/embedding.js';
 
 import { aiChat } from '../../../ai-engine/chat.js';
+import { DB_SCHEMA } from '../../../ai-engine/prompts.js';
 
 
 // ── detectCategory (simple, no AI) ───────────────────────────────────────────
@@ -366,6 +367,27 @@ export const undoLastTransaction = async (c) => {
         return c.json({ message: 'internal server error', status: 500 }, 500);
     }
 };
+
+
+
+
+const DB_SCHEMA = `
+Table: transactions
+  - id (integer, primary key)
+  - user_id (uuid)
+  - account_id (uuid)
+  - type (text: 'income' or 'expense')
+  - amount (numeric)
+  - description (text)
+  - category (text)
+  - created_at (timestamp)
+
+Table: accounts
+  - id (uuid)
+  - user_id (uuid)
+  - name (text)
+  - created_at (timestamp)
+`;
 
 export const aiChatHandler = async (c) => {
     try {
