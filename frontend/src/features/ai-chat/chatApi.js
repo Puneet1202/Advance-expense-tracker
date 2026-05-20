@@ -14,7 +14,18 @@ import api from '../../api/axios';
  * @param {Array}  history - Chat history [{role, content}] — last 6-8 messages
  * @returns {Promise<{reply: string|null, action: object|null}>}
  */
-export async function sendChatMessage(message, history = []) {
+export async function sendChatMessage(message, historyOrTransactions = [], _balances = [], legacyHistory = null) {
+  const rawHistory = Array.isArray(legacyHistory) ? legacyHistory : historyOrTransactions;
+  const history = Array.isArray(rawHistory)
+    ? rawHistory
+        .filter(item => item && typeof item.content === 'string')
+        .slice(-6)
+        .map(item => ({
+          role: item.role === 'assistant' ? 'assistant' : 'user',
+          content: item.content.length > 300 ? `${item.content.slice(0, 300)}... [truncated]` : item.content
+        }))
+    : [];
+
   let usdRate = 83; // fallback default
   
   // Local storage se active exchange rate nikaalo agar cached hai
@@ -34,7 +45,7 @@ export async function sendChatMessage(message, history = []) {
   // Pure clean REST call to backend
   const res = await api.post('/tracker/ai-chat', {
     message,
-    history: history.slice(-8), // Safe limit for chat window context memory
+    history,
     usdRate: Number(usdRate)
   }, {
     timeout: 300000, // 5 mins timeout for heavy background analytics queries

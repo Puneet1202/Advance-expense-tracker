@@ -18,7 +18,70 @@ Table: accounts
   - user_id (uuid)
   - name (text)
   - created_at (timestamp)
+
+Table: users
+  - id (integer, primary key)
+  - name (text)
+  - email (text)
+  - expense_limit (numeric)
+  - is_saving_mode (boolean)
 `;
+
+function isProfileNameQuestion(message) {
+    return /^(my name|what is my name|who am i|tell me my name)\??$/i.test(message.trim());
+}
+
+function isVagueExpenseQuestion(message) {
+    return /^(expense|expenses|income|kharcha|spending|spend)$/i.test(message.trim());
+}
+
+function getVagueCategory(message) {
+    const categoryMap = {
+        food: 'Food',
+        shopping: 'Shopping',
+        transport: 'Transport',
+        fuel: 'Fuel',
+        bills: 'Bills',
+        salary: 'Salary',
+        travel: 'Travel',
+        fitness: 'Fitness',
+        health: 'Health',
+        housing: 'Housing',
+        entertainment: 'Entertainment'
+    };
+
+    return categoryMap[message.trim().toLowerCase()] || null;
+}
+
+function isTransactionListQuestion(message) {
+    return /\b(last|latest|recent|show|list|all)\b/i.test(message) &&
+        /\b(transaction|transactions|expense|expenses|income)\b/i.test(message);
+}
+
+function formatValue(value) {
+    if (value === null || value === undefined || Number.isNaN(value)) return '0';
+    if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2);
+    return String(value);
+}
+
+function formatTransactionRows(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return 'No matching records were found.';
+    }
+
+    return rows.map((row, index) => {
+        const amount = row.amount ?? row.total_amount ?? row.sum ?? row.total;
+        const account = row.account_name ?? row.account ?? row.name;
+        const description = row.description ?? row.details ?? row.category ?? 'Transaction';
+        const type = row.type ? `, ${row.type}` : '';
+        const category = row.category ? `, ${row.category}` : '';
+        const accountText = account ? `, ${account}` : '';
+        const date = row.created_at ? `, ${new Date(row.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : '';
+        const id = row.id ? `#${row.id} ` : '';
+
+        return `${index + 1}. ${id}${description}: ₹${formatValue(Number(amount || 0))}${type}${category}${accountText}${date}`;
+    }).join('\n');
+}
 
 /**
  * Core AI Chat Engine - Clean & Scalable Decoupled Architecture
@@ -26,6 +89,32 @@ Table: accounts
 export async function aiChat(env, supabase, userId, message, history = []) {
     try {
         const cleanMessage = message.trim().toLowerCase();
+
+        if (isProfileNameQuestion(message)) {
+            const { data: userProfile, error } = await supabase
+                .from('users')
+                .select('name, email')
+                .eq('id', userId)
+                .maybeSingle();
+
+            if (error) throw error;
+            if (userProfile?.name) return { reply: `Your name is ${userProfile.name}.` };
+            if (userProfile?.email) return { reply: `I found your email as ${userProfile.email}, but no name is saved in your profile.` };
+            return { reply: 'I could not find a saved name in your profile.' };
+        }
+
+        if (isVagueExpenseQuestion(message)) {
+            return {
+                reply: 'Do you want total expenses this month, recent expenses, category-wise expenses, or expenses from a specific account?'
+            };
+        }
+
+        const vagueCategory = getVagueCategory(message);
+        if (vagueCategory) {
+            return {
+                reply: `For ${vagueCategory}, do you want this month's total, recent transactions, account-wise breakdown, or all-time spending?`
+            };
+        }
 
         // 🛡️ CONTEXT LIMITATION GUARDRAIL: Strict context window tokens management
         const safeHistory = Array.isArray(history) ? history.slice(-4) : [];
@@ -68,6 +157,7 @@ export async function aiChat(env, supabase, userId, message, history = []) {
         const finalDynamicSchema = `
             ${ENGINE_DB_SCHEMA}
            Strict Rule: Use SQL aggregates like SUM, COUNT, AVG directly in queries instead of fetching raw rows.
+           Strict Rule: For transaction list requests, always join accounts and include transactions.id, transactions.description, transactions.type, transactions.amount, transactions.category, transactions.created_at, accounts.name as account_name.
             `;
 
         // 1. First Core Turn: Intent Classification / SQL Generation
@@ -159,6 +249,10 @@ export async function aiChat(env, supabase, userId, message, history = []) {
         // 🔥 CRITICAL FIXED BLOCK: Force immediate truncation before prompt mapping
         // Maximum top 5 rows hi prompt memory mein jayengi taaki upstream length blast na ho
         const safeDbResult = Array.isArray(dbResult) ? dbResult.slice(0, 5) : [];
+
+        if (isTransactionListQuestion(message)) {
+            return { reply: formatTransactionRows(safeDbResult) };
+        }
 
         // Compile raw database tuples into natural English speech layout using heavily sliced data
         const replyPrompt = buildReplyPrompt(message, safeDbResult);

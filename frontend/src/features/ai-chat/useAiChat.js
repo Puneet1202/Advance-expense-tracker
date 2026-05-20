@@ -187,7 +187,7 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
     content: m.content,
   }));
 
-      const { reply, action, diagnostics } = await sendChatMessage(msg, transactions, balances, history);
+      const { reply, action, diagnostics } = await sendChatMessage(msg, history);
       
       if (diagnostics) {
         console.groupCollapsed(`🔍 AI Diagnostics Report: ${diagnostics.route} Route`);
@@ -222,7 +222,7 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
         console.groupEnd();
       }
 
-      if (action) {
+      if (action && typeof action === 'object') {
         await executeAction(action);
       } else if (reply) {
         addMsg('assistant', reply);
@@ -232,7 +232,7 @@ export function useAiChat({ trackerData, fetchTrackerData }) {
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, messages, transactions, balances, executeAction, addMsg]);
+  }, [input, isLoading, messages, executeAction, addMsg]);
 
   // BUG 3: Chat history clear karna
   const clearHistory = useCallback(() => {

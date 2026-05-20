@@ -383,6 +383,9 @@ export const aiChatHandler = async (c) => {
         // ======================================================================
         if (result.action) {
             const { action, data } = result.action;
+            const destructiveConfirmed =
+                /^(confirm|yes|haan|ha|ok|okay)\b/i.test(message.trim()) &&
+                /(delete|remove|undo|hata|hapus)/i.test(message);
 
             // 1. ADD_TRANSACTION
             if (action === "ADD_TRANSACTION") {
@@ -435,6 +438,14 @@ export const aiChatHandler = async (c) => {
                     return c.json({ reply: `Could not find any recent transaction matching "${data.description}" to delete.` }, 200);
                 }
 
+                if (!destructiveConfirmed) {
+                    return c.json({
+                        requiresConfirmation: true,
+                        pendingAction: "DELETE_TRANSACTION",
+                        reply: `I found "${matchTxn.description}" worth ₹${matchTxn.amount}. Type "confirm delete" if you really want to delete it.`
+                    }, 200);
+                }
+
                 await supabase.from('transactions').delete().eq('id', matchTxn.id).eq('user_id', user.id);
                 
                 return c.json({ 
@@ -455,6 +466,14 @@ export const aiChatHandler = async (c) => {
                     .maybeSingle();
 
                 if (lastTxn) {
+                    if (!destructiveConfirmed) {
+                        return c.json({
+                            requiresConfirmation: true,
+                            pendingAction: "UNDO_LAST_ACTION",
+                            reply: `The last transaction is "${lastTxn.description}" worth ₹${lastTxn.amount}. Type "confirm undo" if you really want to remove it.`
+                        }, 200);
+                    }
+
                     await supabase.from('transactions').delete().eq('id', lastTxn.id).eq('user_id', user.id);
                     
                     return c.json({ 

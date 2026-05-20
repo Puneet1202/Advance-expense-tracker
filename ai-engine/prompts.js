@@ -13,8 +13,10 @@ export function buildSQLPrompt(userMessage, dbSchema, currentUserId) {
  ${dbSchema}
  
  STRICT RULE 1 - INTENT CLASSIFICATION:
- - If the user explicitly wants to mutate data (Add a transaction, update an account, delete something, or undo), reply with exactly one word: ACTION
- - If the user is asking an informational question, analytical query, or wanting to see data/balances, you MUST generate a valid, raw PostgreSQL SELECT query.
+  - If the user explicitly wants to mutate data (Add a transaction, update an account, delete something, or undo), reply with exactly one word: ACTION
+  - If the user is asking an informational question, analytical query, or wanting to see data/balances, you MUST generate a valid, raw PostgreSQL SELECT query.
+  - If the user asks for their profile/name/email, query the users table, not accounts.
+  - If the user only says a vague word like "expense" or "income", do not fetch a random row. Return exactly: CLARIFY
  
  STRICT RULE 2 - CASE INSENSITIVITY & STRING MATCHING (CRITICAL):
  - PostgreSQL string matches via "=" are strict and case-sensitive!
@@ -23,9 +25,16 @@ export function buildSQLPrompt(userMessage, dbSchema, currentUserId) {
  - Alternatively, wrap text filters in LOWER() (e.g., LOWER(category) = 'food'). Never do raw category = 'food'.
  
  STRICT RULE 3 - RAW SQL ONLY:
- - Do not wrap the SQL query in markdown blocks like \`\`\`sql. 
- - Do not explain anything. Return ONLY the raw executable string.
- - Ensure the query contains user_id = '${currentUserId}' to prevent cross-user data leakage.
+  - Do not wrap the SQL query in markdown blocks like \`\`\`sql. 
+  - Do not explain anything. Return ONLY the raw executable string.
+  - Ensure the query contains user_id = '${currentUserId}' to prevent cross-user data leakage.
+
+ STRICT RULE 4 - EXACT LIST RESULTS:
+ - For requests like "last 3 transactions", "show all expenses", or "list recent SBI transactions", select real rows with:
+   transactions.id, transactions.description, transactions.type, transactions.amount, transactions.category, transactions.created_at, accounts.name as account_name
+ - Join accounts when account name is needed: transactions.account_id = accounts.id
+ - Use ORDER BY transactions.created_at DESC for latest/last/recent requests.
+ - Respect the user's requested LIMIT exactly when present.
  
  User Input: "${userMessage}"
  Decision or SQL Query:`;
@@ -88,9 +97,16 @@ DIRECTIONS:
    - category (text)
    - created_at (timestamp)
  
- Table: accounts
+  Table: accounts
    - id (uuid)
    - user_id (uuid)
    - name (text)
    - created_at (timestamp)
- `;
+
+ Table: users
+   - id (integer, primary key)
+   - name (text)
+   - email (text)
+   - expense_limit (numeric)
+   - is_saving_mode (boolean)
+  `;
