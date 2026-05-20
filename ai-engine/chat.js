@@ -1,33 +1,107 @@
-
-import { askCloudflareAI } from './src/providers/cloudflare.js';
+import { askCloudflareAI } from './src/providers/cloudflare.js'; 
 import { buildSQLPrompt, buildReplyPrompt, buildActionPrompt } from './prompts.js';
 
+// Schema encapsulated inside the core engine module (Single Source of Truth)
+const ENGINE_DB_SCHEMA = `
+Table: transactions
+  - id (integer, primary key)
+  - user_id (uuid)
+  - account_id (uuid)
+  - type (text: 'income' or 'expense')
+  - amount (numeric)
+  - description (text)
+  - category (text)
+  - created_at (timestamp)
+
+Table: accounts
+  - id (uuid)
+  - user_id (uuid)
+  - name (text)
+  - created_at (timestamp)
+`;
+
 /**
- * Smart AI Chat Controller with Text-to-SQL & Action Routing for Supabase
+ * Core AI Chat Engine - Clean & Scalable Decoupled Architecture
  */
-export async function aiChat(env, supabase, userId, message, history = [], dynamicSchema) {
+export async function aiChat(env, supabase, userId, message, history = []) {
     try {
-        // STEP 1: AI se decision lo (SQL query ya Action)
-        const sqlPrompt = buildSQLPrompt(message, dynamicSchema, userId);
-        const firstReply = await askCloudflareAI(sqlPrompt, message, history, env);
+        const cleanMessage = message.trim().toLowerCase();
 
-        const decision = firstReply.trim();
+        // 🛡️ CONTEXT LIMITATION GUARDRAIL: Strict context window tokens management
+        const safeHistory = Array.isArray(history) ? history.slice(-4) : [];
 
-        // ==========================================
-        // FLOW A: AGAR AI NE "ACTION" DETECT KIYA
-        // ==========================================
+        // 🚀 DYNAMIC COMPLIANCE: Fetch user accounts directly from DB to avoid hardcoding
+        const { data: userAccounts } = await supabase
+            .from('accounts')
+            .select('name')
+            .eq('user_id', userId);
+
+        const dynamicAccounts = userAccounts ? userAccounts.map(acc => acc.name.toLowerCase()) : [];
+        
+        // System operational keywords to detect finance tracking context
+        const systemKeywords = ['add', 'sub', 'spent', 'paid', 'income', 'expense', 'transaction', 'balance', 'kharcha'];
+
+        // 🛡️ SMART INTENT BYPASS: Check if user input contains any financial context dynamically
+        const hasFinanceContext = dynamicAccounts.some(acc => cleanMessage.includes(acc)) || 
+                                  systemKeywords.some(kw => cleanMessage.includes(kw));
+
+        const trueGreetings = ['hi', 'hello', 'hey', 'yo', 'sup', 'hola', 'good morning', 'good afternoon'];
+
+        // If it's just a greeting or short non-finance text, handle immediately at edge layer
+        if (trueGreetings.includes(cleanMessage) || (cleanMessage.length <= 3 && !hasFinanceContext)) {
+            const replyPrompt = `You are a professional AI Financial Assistant. The user greeted you with "${message}". Reply with a short, welcoming single-sentence response in pure, crisp English, asking how you can help them manage their finances today.`;
+            const quickReply = await askCloudflareAI(replyPrompt, message, safeHistory, env);
+            return { reply: quickReply };
+        }
+
+        // 🛡️ INTENT OVERRIDE GUARDRAIL: Force action execution path for explicit mutations
+        const actionKeywords = ['spent', 'paid', 'received', 'add', 'added', 'gave', 'buy', 'bought'];
+        let forcedDecision = null;
+        
+        const words = cleanMessage.split(' ');
+        if (words.some(word => actionKeywords.includes(word))) {
+            forcedDecision = "ACTION";
+        }
+
+        // 🛡️ RE-ARCHITECTED LIGHTWEIGHT SCHEMA LAYER
+        // No heavy DB instructions injection to prevent token context blast
+        const finalDynamicSchema = `
+            ${ENGINE_DB_SCHEMA}
+           Strict Rule: Use SQL aggregates like SUM, COUNT, AVG directly in queries instead of fetching raw rows.
+            `;
+
+        // 1. First Core Turn: Intent Classification / SQL Generation
+      // 1. First Core Turn: Intent Classification / SQL Generation
+      let decision;
+      if (forcedDecision) {
+          decision = forcedDecision; 
+      } else {
+          const sqlPrompt = buildSQLPrompt(message, finalDynamicSchema, userId);
+          
+          // 🔥 CRITICAL FIXED LINE: Passing empty array [] here instead of safeHistory
+          // Isse classification layer par purani chat history ka 20k+ tokens ka load instant ZERO ho jayega!
+          const firstReply = await askCloudflareAI(sqlPrompt, message, [], env);
+          decision = firstReply.trim();
+      }
+
+        // ======================================================================
+        // FLOW A: ACTION DATA MUTATION ROUTING (ADD, DELETE, UNDO)
+        // ======================================================================
         if (decision === "ACTION") {
             const actionPrompt = buildActionPrompt(message, userId);
-            const actionReply = await askCloudflareAI(actionPrompt, message, [], env);
+            const actionReply = await askCloudflareAI(actionPrompt, message, safeHistory, env);
 
             try {
                 const actionJson = JSON.parse(actionReply);
 
-                // Account Name se Id nikaalne ka logic
+                if (!actionJson.action || actionJson.action === "NONE") {
+                    return { reply: "I could not process that specific request. Could you please provide clearer parameters?" };
+                }
+
+                // Auto resolve account_id from dynamic accounts mapping securely
                 if (actionJson.action === "ADD_TRANSACTION" && actionJson.data?.account_name) {
                     const accountName = actionJson.data.account_name.toLowerCase();
                     
-                    // Live Supabase lookup with maybeSingle() to get object instead of array
                     const { data: accountRecord, error: accErr } = await supabase
                         .from('accounts')
                         .select('id')
@@ -39,7 +113,7 @@ export async function aiChat(env, supabase, userId, message, history = [], dynam
                         actionJson.data.account_id = accountRecord.id;
                     } else {
                         return { 
-                            reply: `Bhai, mujhe tumhara "${actionJson.data.account_name}" naam ka account nahi mila. Kripya sahi account specify karo.` 
+                            reply: `I could not locate an account named "${actionJson.data.account_name}". Please verify your account configuration.` 
                         };
                     }
                 }
@@ -48,44 +122,52 @@ export async function aiChat(env, supabase, userId, message, history = [], dynam
 
             } catch (jsonErr) {
                 console.error("Action JSON Parsing Failed:", jsonErr, "Raw output was:", actionReply);
-                return { reply: "Mafi chahta hoon, action process karne mein thoda confusion ho gaya. Kripya dubara try karein." };
+                return { reply: "I encountered an error parsing the action response. Please try again shortly." };
             }
         }
 
-        // ==========================================
-        // FLOW B: AGAR AI NE "SQL SELECT" QUERY DIYA
-        // ==========================================
-        const sqlQuery = decision;
+        // ======================================================================
+        // FLOW B: TEXT-TO-SQL ANALYTICS ROUTING (WITH SECURE SLICING)
+        // ======================================================================
+        let sqlQuery = decision.trim();
 
-        // Security Guardrail 1: Strictly SELECT check
+        // Extra Protection: Stripping trailing semicolon to prevent Supabase RPC 42601 crashing
+        if (sqlQuery.endsWith(';')) {
+            sqlQuery = sqlQuery.slice(0, -1).trim();
+        }
+
+        // Injection Guardrails
         if (!sqlQuery.toUpperCase().includes("SELECT")) {
-            return { reply: "Security Alert: Main sirf data dekhne ki queries chala sakta hoon." };
+            return { reply: "Security Alert: Access denied. I can only execute informational queries." };
         }
 
-        // Security Guardrail 2: Multi-tenant safety
         if (!sqlQuery.includes(userId)) {
-            return { reply: "Security Alert: Unauthorized data access block kiya gaya." };
+            return { reply: "Security Alert: Multitenancy query isolation breach blocked." };
         }
 
-        // Execute raw SQL on Supabase
-        let dbResult;
+        let dbResult = [];
         try {
+            // Executing the structured query over secure Postgres RPC function
             const { data, error } = await supabase.rpc('execute_raw_sql', { query_text: sqlQuery });
             if (error) throw error;
             dbResult = data || [];
         } catch (dbErr) {
             console.error("Supabase RPC Query Execution Failed:", dbErr, "Query was:", sqlQuery);
-            return { reply: "Database se data nikalne mein thodi dikkat aa rahi hai. Kripya thodi der baad poochhein." };
+            return { reply: "I am unable to retrieve data from the server at the moment. Please try again later." };
         }
 
-        // STEP 3: DB Result se final readable answer banwao
-        const replyPrompt = buildReplyPrompt(message, dbResult);
-        const finalHumanReply = await askCloudflareAI(replyPrompt, message, history, env);
+        // 🔥 CRITICAL FIXED BLOCK: Force immediate truncation before prompt mapping
+        // Maximum top 5 rows hi prompt memory mein jayengi taaki upstream length blast na ho
+        const safeDbResult = Array.isArray(dbResult) ? dbResult.slice(0, 5) : [];
+
+        // Compile raw database tuples into natural English speech layout using heavily sliced data
+        const replyPrompt = buildReplyPrompt(message, safeDbResult);
+        const finalHumanReply = await askCloudflareAI(replyPrompt, message, safeHistory, env);
 
         return { reply: finalHumanReply };
 
     } catch (globalErr) {
         console.error("Global AI Chat Error:", globalErr);
-        return { reply: "Something went wrong! Server pe koi internal issue aaya hai." };
+        return { reply: "An internal server error occurred within the AI subsystem." };
     }
 }

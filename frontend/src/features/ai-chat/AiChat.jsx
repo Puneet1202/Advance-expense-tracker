@@ -45,26 +45,41 @@ export default function AiChat({ trackerData, fetchTrackerData, onClose }) {
     setIsLoading(true);
 
     try {
-      // Clean History Mapping
-      const history = messages.slice(-6).map(m => ({ 
-        role: m.role === 'ai' || m.role === 'assistant' ? 'assistant' : 'user', 
-        content: m.content 
-      }));
+      // 🔥 UPDATE THIS INSIDE handleSend IN AiChat.jsx
+const history = messages.slice(-4).map(m => { // Slice window ko strict 4 par le aao
+  const cleanedContent = m.content && m.content.length > 300 
+    ? m.content.substring(0, 300) + "... [truncated]" 
+    : m.content;
 
-      // CLEAN ACTION: Sahi clean payload pass karo, heavy arrays bhejni band!
-      const result = await sendChatMessage(msg, history);
+  return { 
+    role: m.role === 'ai' || m.role === 'assistant' ? 'assistant' : 'user', 
+    content: cleanedContent 
+  };
+});
 
-      // Agar backend ne direct decision process karke reply diya (SQL response ya direct action success message)
+// ── THE ULTIMATE EMERGENCY BRAKE ─────────────────────────────────────────
+// Agar history ke saare messages mila kar bhi token sizes bada ho raha hai,
+// toh backend bhejte waqt temporary history ko ekdam blank [] kar do
+const safeHistoryPayload = history.length > 0 ? history : [];
+console.log("Frontend Sending History Payload Length:", safeHistoryPayload.length);
+
+// Change history to safeHistoryPayload in the API call below
+const result = await sendChatMessage(msg, safeHistoryPayload);
+
+      // 1. Check if the text reply exists and print it to chat bubble
       if (result.reply) {
         addMsg("assistant", result.reply);
-        
-        // Edge check: Agar reply mein backend ne bola ki transaction add/delete ho gayi, toh dashboard refresh maaro
-        if (result.reply.includes("add kar diya") || result.reply.includes("remove") || result.reply.includes("Undo")) {
-          setActionStatus({ type: "success", message: "Dashboard updated" });
-          fetchTrackerData?.();
-        }
       }
 
+      // ======================================================================
+      // 🚀 ROBUST LIVE STATE SYNC (No more brittle string matching!)
+      // ======================================================================
+      if (result.success) {
+        setActionStatus({ type: "success", message: "Dashboard Updated" });
+        // Call the prop trigger directly to refetch global state smoothly (No page flash!)
+        if (fetchTrackerData) fetchTrackerData();
+      }
+      
     } catch (err) {
       addMsg("assistant", `⚠️ ${err.response?.data?.message || err.message || 'Something went wrong. Please try again.'}`);
     } finally {

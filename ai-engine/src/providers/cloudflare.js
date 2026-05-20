@@ -20,18 +20,40 @@ function normalizeMessages(messages = []) {
     return validMessages;
 }
 
+/**
+ * Ultimate Robust text extractor matching any shape of Cloudflare Workers AI responses
+ */
 function extractText(response) {
-    if (typeof response === 'string') return response;
-    if (typeof response?.response === 'string') return response.response;
+    if (!response) throw new Error('Cloudflare AI returned an empty response object');
+
+    // Case 1: Llama 3.3 Standard OpenAI-style block structure inside 'result'
+    if (response?.result?.choices?.[0]?.message?.content) {
+        return response.result.choices[0].message.content;
+    }
+
+    // Case 2: Direct choices layout
+    if (response?.choices?.[0]?.message?.content) {
+        return response.choices[0].message.content;
+    }
+
+    // Case 3: Agar direct 'response' key ke andar ek nested OBJECT aa jaye
+    if (response?.response && typeof response.response === 'object') {
+        return JSON.stringify(response.response);
+    }
+
+    // Case 4: Standard worker text generation strings
     if (typeof response?.result?.response === 'string') return response.result.response;
-    if (typeof response?.text === 'string') return response.text;
+    if (typeof response?.response === 'string') return response.response;
+    if (typeof response === 'string') return response;
 
-    const content = response?.choices?.[0]?.message?.content;
-    if (typeof content === 'string') return content;
-
+    // Output debug logs to terminal if everything fails
+    console.error('[Cloudflare Payload Error Check] Unexpected payload structure:', JSON.stringify(response));
     throw new Error('Cloudflare AI response did not include text');
 }
 
+/**
+ * 🔥 MAIN EXPORTED FUNCTION — This fixes the Wrangler warning!
+ */
 export async function askCloudflareAI(systemPrompt, message, history = [], env) {
     if (!env?.AI?.run) {
         throw new Error('Cloudflare AI binding is missing');
@@ -45,8 +67,8 @@ export async function askCloudflareAI(systemPrompt, message, history = [], env) 
 
     const response = await env.AI.run(CHAT_MODEL, {
         messages,
-        temperature: 0.2,
-        max_tokens: 1200
+        temperature: 0.1, // Safe & strict for Text-to-SQL execution
+        max_tokens: 400
     });
 
     return extractText(response).trim();
